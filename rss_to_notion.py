@@ -7,18 +7,62 @@ from datetime import datetime
 # 1️⃣ 配置
 # =========================
 
-# RSS Feed 地址列表
+# RSS Feed 地址列表（整合原有 + PubMed + Google Alerts 示例）
 RSS_FEEDS = [
-    "https://arxiv.org/rss/cs",        # CS 类论文
-    "https://arxiv.org/rss/math"       # 数学类论文
-    # 可以继续添加其他 RSS 链接，比如 Feedy 的 RSS
+    # === Psychology 子领域 ===
+    "https://nimh.nih.gov/news/science-updates/rss.xml",
+    "https://positivepsychologynews.com/feed",
+    "https://psychologicalscience.org/feed",
+    "https://psychreg.org/feed",
+    "https://spring.org.uk/feed",
+
+    # === Cognitive Science / Neuroscience ===
+    "https://cogneurosociety.org/feed",
+    "https://learningandthebrain.com/blog/feed",
+    "https://neurocritic.blogspot.com/feeds/posts/default",
+    "https://neurosciencenews.com/feed",
+    "https://news.mit.edu/rss/topic/neuroscience",
+    "https://knowingneurons.com/feed",
+
+    # === Social Science / Sociology ===
+    "https://socialsciencespace.com/feed",
+    "https://blogs.lse.ac.uk/impactofsocialsciences/feed",
+    "https://phys.org/rss-feed/science-news/social-sciences",
+    "https://news.mit.edu/rss/topic/social-sciences",
+
+    # === Behavioral Science / Behavioral Economics ===
+    "https://behavioralscientist.org/feed",
+    "https://behavioraleconomics.com/feed",
+    "https://economicspsychologypolicy.blogspot.com/feeds/posts/default",
+
+    # === General Science ===
+    "https://www.sciencenews.org/feed",
+    "https://rss.sciam.com/ScientificAmer",
+    "https://newscientist.com/feed/home",
+
+    # === arXiv 子分类论文 RSS ===
+    "https://arxiv.org/rss/cogsci",     # Cognitive Science
+    "https://arxiv.org/rss/q-fin.EC",   # Quantitative Finance & Economics
+    "https://arxiv.org/rss/econ.EM",    # Econometrics
+    "https://arxiv.org/rss/q-bio.NC",   # Quantitative Biology — Neural & Cognitive
+    "https://arxiv.org/rss/stat.ML",    # Statistics — Machine Learning
+
+    # === PubMed RSS 示例（关键词搜索生成 RSS） ===
+    "https://pubmed.ncbi.nlm.nih.gov/rss/search/23000000/?limit=20&utm_campaign=pubmed-2&utm_content=cog-neuro-rss",
+    "https://pubmed.ncbi.nlm.nih.gov/rss/search/23000001/?limit=20&utm_campaign=pubmed-2&utm_content=behavioral-econ-rss",
+
+    # === Google Alerts RSS 示例（关键词生成的 RSS） ===
+    "https://www.google.com/alerts/feeds/12345678901234567890/abcdefg",
+    "https://www.google.com/alerts/feeds/12345678901234567890/hijklmn"
 ]
 
-# 分类关键词，用于过滤文章
+# 分类关键词，用于过滤文章（英文）
 KEYWORDS = {
-    "心理学": ["认知", "神经心理学", "行为心理学", "情绪", "决策", "学习"],
-    "经济学": ["行为经济学", "宏观经济", "微观经济", "市场", "金融", "货币", "博弈论"],
-    "社会学": ["社会行为", "社会网络", "社会结构", "群体", "文化", "组织", "制度"]
+    "Psychology": ["cognition", "behavioral", "cognitive", "decision making", "learning", "emotion", "psychology", "mental", "clinical", "developmental"],
+    "Economics": ["behavioral economics", "macro", "microeconomics", "market", "finance", "monetary", "game theory", "economic", "econometrics"],
+    "Social Science": ["social behavior", "social network", "social structure", "group", "culture", "organization", "institution", "policy", "society"],
+    "Cognitive Science": ["cognition", "memory", "attention", "language", "perception", "neuroscience", "brain", "decision", "modeling"],
+    "Neuroscience": ["neuron", "brain", "neural", "synapse", "cortex", "hippocampus", "prefrontal", "dopamine", "neuroimaging", "functional MRI"]
 }
 
 # Notion 配置
@@ -56,14 +100,27 @@ def get_existing_links():
         print(f"⚠️ 获取已有文章失败: {resp.status_code}, {resp.text}")
     return existing_links
 
-def add_to_notion(title, link, abstract, published):
-    """将文章添加到 Notion 数据库"""
+def match_keywords(title, summary):
+    """
+    检查文章是否匹配关键词，返回匹配到的类别
+    """
+    matched_categories = []
+    title_lower = title.lower()
+    summary_lower = summary.lower()
+    for category, words in KEYWORDS.items():
+        for word in words:
+            if word.lower() in title_lower or word.lower() in summary_lower:
+                matched_categories.append(category)
+                break  # 每类匹配到一个词即可
+    return matched_categories
+
+def add_to_notion(title, link, abstract, published, categories):
+    """将文章添加到 Notion 数据库，并自动分类"""
     headers = {
         "Authorization": f"Bearer {NOTION_API_KEY}",
         "Content-Type": "application/json",
         "Notion-Version": NOTION_VERSION
     }
-    # 格式化日期
     if published:
         try:
             published_date = datetime(*published[:6]).isoformat()
@@ -72,12 +129,16 @@ def add_to_notion(title, link, abstract, published):
     else:
         published_date = None
 
+    # 将分类列表拼成逗号分隔字符串
+    category_text = ", ".join(categories) if categories else "Uncategorized"
+
     data = {
         "parent": {"database_id": DATABASE_ID},
         "properties": {
             "Name": {"title": [{"text": {"content": title}}]},
             "Link": {"url": link},
             "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
+            "Category": {"rich_text": [{"text": {"content": category_text}}]},
         }
     }
     if published_date:
@@ -85,21 +146,9 @@ def add_to_notion(title, link, abstract, published):
 
     response = requests.post(NOTION_BASE_URL, headers=headers, json=data)
     if response.status_code == 200:
-        print(f"✅ 添加成功: {title}")
+        print(f"✅ 添加成功: {title} | Category: {category_text}")
     else:
         print(f"❌ 添加失败: {title}, {response.status_code}, {response.text}")
-
-def match_keywords(title, summary):
-    """
-    检查文章是否匹配关键词，返回匹配到的类别
-    """
-    matched_categories = []
-    for category, words in KEYWORDS.items():
-        for word in words:
-            if word in title or word in summary:
-                matched_categories.append(category)
-                break  # 每类匹配到一个词即可
-    return matched_categories
 
 # =========================
 # 3️⃣ 主程序
@@ -112,12 +161,12 @@ for feed_url in RSS_FEEDS:
     print(f"📡 抓取 RSS: {feed_url}")
     feed = feedparser.parse(feed_url)
     for entry in feed.entries:
-        title = entry.get("title", "无标题")
+        title = entry.get("title", "No Title")
         link = entry.get("link", "")
         summary = entry.get("summary", "")
         published = entry.get("published_parsed")  # time.struct_time
 
-        # 关键词过滤
+        # 关键词过滤并自动分类
         matched = match_keywords(title, summary)
         if not matched:
             print(f"⚠️ 不匹配关键词，跳过: {title}")
@@ -129,4 +178,4 @@ for feed_url in RSS_FEEDS:
             continue
 
         # 推送到 Notion
-        add_to_notion(title, link, summary, published)
+        add_to_notion(title, link, summary, published, matched)
