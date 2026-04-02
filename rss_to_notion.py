@@ -7,62 +7,45 @@ from datetime import datetime
 # 1️⃣ 配置
 # =========================
 
-# RSS Feed 地址列表（整合原有 + PubMed + Google Alerts 示例）
 RSS_FEEDS = [
-    # === Psychology 子领域 ===
-    "https://nimh.nih.gov/news/science-updates/rss.xml",
-    "https://positivepsychologynews.com/feed",
-    "https://psychologicalscience.org/feed",
-    "https://psychreg.org/feed",
-    "https://spring.org.uk/feed",
+    # arXiv 示例
+    "https://arxiv.org/rss/cogsci",
+    "https://arxiv.org/rss/q-fin.EC",
+    "https://arxiv.org/rss/econ.EM",
 
-    # === Cognitive Science / Neuroscience ===
-    "https://cogneurosociety.org/feed",
-    "https://learningandthebrain.com/blog/feed",
-    "https://neurocritic.blogspot.com/feeds/posts/default",
-    "https://neurosciencenews.com/feed",
-    "https://news.mit.edu/rss/topic/neuroscience",
-    "https://knowingneurons.com/feed",
+    # PubMed 示例 RSS（关键词搜索生成）
+    "https://pubmed.ncbi.nlm.nih.gov/rss/search/23000000/?limit=20",
+    "https://pubmed.ncbi.nlm.nih.gov/rss/search/23000001/?limit=20",
 
-    # === Social Science / Sociology ===
-    "https://socialsciencespace.com/feed",
-    "https://blogs.lse.ac.uk/impactofsocialsciences/feed",
-    "https://phys.org/rss-feed/science-news/social-sciences",
-    "https://news.mit.edu/rss/topic/social-sciences",
-
-    # === Behavioral Science / Behavioral Economics ===
-    "https://behavioralscientist.org/feed",
-    "https://behavioraleconomics.com/feed",
-    "https://economicspsychologypolicy.blogspot.com/feeds/posts/default",
-
-    # === General Science ===
-    "https://www.sciencenews.org/feed",
-    "https://rss.sciam.com/ScientificAmer",
-    "https://newscientist.com/feed/home",
-
-    # === arXiv 子分类论文 RSS ===
-    "https://arxiv.org/rss/cogsci",     # Cognitive Science
-    "https://arxiv.org/rss/q-fin.EC",   # Quantitative Finance & Economics
-    "https://arxiv.org/rss/econ.EM",    # Econometrics
-    "https://arxiv.org/rss/q-bio.NC",   # Quantitative Biology — Neural & Cognitive
-    "https://arxiv.org/rss/stat.ML",    # Statistics — Machine Learning
-
-    # === PubMed RSS 示例（关键词搜索生成 RSS） ===
-    "https://pubmed.ncbi.nlm.nih.gov/rss/search/23000000/?limit=20&utm_campaign=pubmed-2&utm_content=cog-neuro-rss",
-    "https://pubmed.ncbi.nlm.nih.gov/rss/search/23000001/?limit=20&utm_campaign=pubmed-2&utm_content=behavioral-econ-rss",
-
-    # === Google Alerts RSS 示例（关键词生成的 RSS） ===
-    "https://www.google.com/alerts/feeds/12345678901234567890/abcdefg",
-    "https://www.google.com/alerts/feeds/12345678901234567890/hijklmn"
+    # Google Alerts RSS 示例
+    "https://www.google.com/alerts/feeds/12345678901234567890/abcdefg"
 ]
 
-# 分类关键词，用于过滤文章（英文）
+# 优化关键词列表（英文）
 KEYWORDS = {
-    "Psychology": ["cognition", "behavioral", "cognitive", "decision making", "learning", "emotion", "psychology", "mental", "clinical", "developmental"],
-    "Economics": ["behavioral economics", "macro", "microeconomics", "market", "finance", "monetary", "game theory", "economic", "econometrics"],
-    "Social Science": ["social behavior", "social network", "social structure", "group", "culture", "organization", "institution", "policy", "society"],
-    "Cognitive Science": ["cognition", "memory", "attention", "language", "perception", "neuroscience", "brain", "decision", "modeling"],
-    "Neuroscience": ["neuron", "brain", "neural", "synapse", "cortex", "hippocampus", "prefrontal", "dopamine", "neuroimaging", "functional MRI"]
+    "Psychology": [
+        "cognition", "cognitive", "behavioral", "behavior", "decision making",
+        "emotion", "learning", "memory", "mental", "clinical", "developmental",
+        "attention", "perception", "psychology"
+    ],
+    "Economics": [
+        "behavioral economics", "macro", "microeconomics", "market", "finance",
+        "monetary", "game theory", "economic", "econometrics", "financial"
+    ],
+    "Social Science": [
+        "social behavior", "social network", "social structure", "group",
+        "culture", "organization", "institution", "policy", "society", "social"
+    ],
+    "Cognitive Science": [
+        "cognition", "memory", "attention", "language", "perception",
+        "neuroscience", "brain", "decision", "modeling", "computational",
+        "cognitive modeling"
+    ],
+    "Neuroscience": [
+        "neuron", "brain", "neural", "synapse", "cortex", "hippocampus",
+        "prefrontal", "dopamine", "neuroimaging", "functional MRI", "EEG",
+        "fMRI", "neuroplasticity"
+    ]
 }
 
 # Notion 配置
@@ -76,9 +59,7 @@ NOTION_VERSION = "2022-06-28"
 # =========================
 
 def get_existing_links():
-    """
-    获取数据库已有文章链接，避免重复插入
-    """
+    """获取已有文章链接，避免重复推送"""
     url = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
     headers = {
         "Authorization": f"Bearer {NOTION_API_KEY}",
@@ -86,50 +67,45 @@ def get_existing_links():
         "Content-Type": "application/json"
     }
     existing_links = set()
-    body = {"page_size": 50}  # 获取最新50条，可按需增加
+    body = {"page_size": 50}  # 最新 50 条
     resp = requests.post(url, headers=headers, json=body)
     if resp.status_code == 200:
         results = resp.json().get("results", [])
         for page in results:
             props = page.get("properties", {})
-            link_prop = props.get("Link", {})
-            link_val = link_prop.get("url")
+            link_val = props.get("Link", {}).get("url")
             if link_val:
                 existing_links.add(link_val)
     else:
         print(f"⚠️ 获取已有文章失败: {resp.status_code}, {resp.text}")
+    print(f"🔹 已有文章数量: {len(existing_links)}")
     return existing_links
 
 def match_keywords(title, summary):
-    """
-    检查文章是否匹配关键词，返回匹配到的类别
-    """
+    """匹配关键词，返回匹配的类别"""
     matched_categories = []
-    title_lower = title.lower()
-    summary_lower = summary.lower()
+    text = f"{title} {summary}".lower()
     for category, words in KEYWORDS.items():
         for word in words:
-            if word.lower() in title_lower or word.lower() in summary_lower:
+            if word.lower() in text:
                 matched_categories.append(category)
-                break  # 每类匹配到一个词即可
+                break
     return matched_categories
 
 def add_to_notion(title, link, abstract, published, categories):
-    """将文章添加到 Notion 数据库，并自动分类"""
+    """推送文章到 Notion"""
     headers = {
         "Authorization": f"Bearer {NOTION_API_KEY}",
         "Content-Type": "application/json",
         "Notion-Version": NOTION_VERSION
     }
+    published_date = None
     if published:
         try:
             published_date = datetime(*published[:6]).isoformat()
-        except Exception:
-            published_date = None
-    else:
-        published_date = None
+        except:
+            pass
 
-    # 将分类列表拼成逗号分隔字符串
     category_text = ", ".join(categories) if categories else "Uncategorized"
 
     data = {
@@ -158,24 +134,29 @@ print("📌 获取已有文章...")
 existing_links = get_existing_links()
 
 for feed_url in RSS_FEEDS:
-    print(f"📡 抓取 RSS: {feed_url}")
+    print(f"\n📡 抓取 RSS: {feed_url}")
     feed = feedparser.parse(feed_url)
+    print(f"🔹 RSS 共抓取 {len(feed.entries)} 条文章")
+
     for entry in feed.entries:
         title = entry.get("title", "No Title")
         link = entry.get("link", "")
         summary = entry.get("summary", "")
-        published = entry.get("published_parsed")  # time.struct_time
+        published = entry.get("published_parsed")
 
-        # 关键词过滤并自动分类
+        print(f"\n📝 标题: {title}")
+        print(f"🔗 链接: {link}")
+        print(f"🖊 摘要长度: {len(summary)}")
+
         matched = match_keywords(title, summary)
+        print(f"🎯 匹配类别: {matched}")
+
         if not matched:
-            print(f"⚠️ 不匹配关键词，跳过: {title}")
-            continue
+            print("⚠️ 无匹配关键词，仍推送为 Uncategorized")
+            matched = ["Uncategorized"]
 
-        # 去重
         if link in existing_links:
-            print(f"⚠️ 已存在，跳过: {title}")
+            print("⚠️ 已存在，跳过")
             continue
 
-        # 推送到 Notion
         add_to_notion(title, link, summary, published, matched)
