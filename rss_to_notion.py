@@ -14,7 +14,7 @@ RSS_FEEDS = [
     # 你可以继续加 RSS 链接
 ]
 
-MIN_ABSTRACT_WORDS = 150  # 摘要词数门槛
+MIN_ABSTRACT_WORDS = 20  # 摘要词数门槛
 
 # ===== Notion API 写入函数 =====
 def create_notion_page(title, abstract, url, journal, published_date, rss_tag):
