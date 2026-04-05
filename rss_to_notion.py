@@ -1,140 +1,140 @@
 import os
+import feedparser
 import requests
-import time
+from datetime import datetime, timedelta
 
-# =========================
-# 配置
-# =========================
-NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
-DATABASE_ID = os.environ.get("DATABASE_ID")
-NOTION_VERSION = "2022-06-28"
-NOTION_BASE_URL = "https://api.notion.com/v1/pages"
+NOTION_API_KEY = os.environ["NOTION_API_KEY"]
+DATABASE_ID = os.environ["DATABASE_ID"]
+
+NOTION_URL = "https://api.notion.com/v1/pages"
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
-    "Notion-Version": NOTION_VERSION,
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Notion-Version": "2022-06-28"
 }
 
-# 旧字段 -> 新字段映射
-FIELD_MAP = {
-    "Name": "Title",
-    "Source": "Journal",
-    "Link": "Source_URL",
-    "Published Date": "Published_Date",
-    "Field": "Academic_Field"
-}
+# RSS源
+RSS_FEEDS = [
+"https://rss.arxiv.org/rss/cs.AI",
+"https://rss.arxiv.org/rss/cs.CY",
+"https://rss.arxiv.org/rss/cs.HC",
+"https://rss.arxiv.org/rss/cs.CL",
+"https://www.sciencedaily.com/rss/mind_brain/psychology.xml",
+"https://www.sciencedaily.com/rss/mind_brain/cognition.xml",
+"https://www.sciencedaily.com/rss/mind_brain/neuroscience.xml",
+"https://www.sciencedaily.com/rss/mind_brain/learning.xml",
+"https://rss.arxiv.org/rss/nlin.AO",
+"https://rss.arxiv.org/rss/nlin.CD",
+"https://rss.arxiv.org/rss/physics.soc-ph",
+"https://www.nature.com/subjects/psychology.rss",
+"https://www.nature.com/subjects/complex-systems.rss",
+"https://www.pnas.org/rss/current.xml",
+"https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science"
+]
 
-MIN_ABSTRACT_LENGTH = 180  # 摘要字数下限
+CORE_KEYWORDS = [
+"cognitive bias","mental model","heuristic","decision making",
+"dual process","metacognition","working memory","attention",
+"feedback loop","emergence","systems thinking","complexity",
+"learning","memory","spaced repetition","retrieval practice",
+"behavioral economics","nudge","social norm","dopamine",
+"reward system","habit formation","entrepreneurship",
+"innovation","creativity","loss aversion"
+]
 
-# =========================
-# 辅助函数
-# =========================
+SIGNAL_KEYWORDS = [
+"paradox","counterintuitive","surprising","unexpected",
+"illusion","myth","irrational","hidden","invisible",
+"why people","how humans"
+]
 
-def get_all_pages(database_id, page_size=50):
-    """分页获取数据库所有页面"""
-    url = f"https://api.notion.com/v1/databases/{database_id}/query"
-    has_more = True
-    start_cursor = None
-    all_pages = []
+BLOCK_KEYWORDS = [
+"clinical trial","patient","diagnosis","treatment",
+"drug","cancer","tumor","disease","gene","protein",
+"algorithm performance","benchmark","GPU"
+]
 
-    while has_more:
-        payload = {"page_size": page_size}
-        if start_cursor:
-            payload["start_cursor"] = start_cursor
-        resp = requests.post(url, headers=HEADERS, json=payload)
-        if resp.status_code != 200:
-            print(f"⚠️ 查询失败: {resp.status_code}, {resp.text}")
-            break
-        data = resp.json()
-        all_pages.extend(data.get("results", []))
-        has_more = data.get("has_more", False)
-        start_cursor = data.get("next_cursor")
-        time.sleep(0.2)  # 避免请求太快
-    return all_pages
 
-def get_property_text(prop, old_field=None):
-    """读取文本内容，兼容旧字段"""
-    if not prop:
-        return ""
-    # title
-    if "title" in prop and prop["title"]:
-        return "".join([t["text"]["content"] for t in prop["title"]])
-    # rich_text
-    if "rich_text" in prop and prop["rich_text"]:
-        return "".join([t["text"]["content"] for t in prop["rich_text"]])
-    # url
-    if "url" in prop and prop["url"]:
-        return prop["url"]
-    # date
-    if "date" in prop and prop["date"]:
-        return prop["date"].get("start", "")
-    # select / multi_select
-    if "select" in prop and prop["select"]:
-        return prop["select"].get("name", "")
-    if "multi_select" in prop and prop["multi_select"]:
-        return ", ".join([s["name"] for s in prop["multi_select"]])
-    # 兼容旧字段名称
-    if old_field and old_field in FIELD_MAP:
-        return get_property_text(prop)
-    return ""
+def word_count(text):
+    return len(text.split())
 
-def migrate_and_delete(page):
-    """迁移字段 + 判断摘要长度 <180 自动删除"""
-    page_id = page["id"]
-    properties = page.get("properties", {})
-    updates = {}
-    
-    # --------- 迁移旧字段 ---------
-    for old_field, new_field in FIELD_MAP.items():
-        old_prop = properties.get(old_field)
-        if not old_prop:
+
+def contains_keyword(text, keywords):
+    text = text.lower()
+    return any(k in text for k in keywords)
+
+
+def block_keyword_count(text):
+    text = text.lower()
+    return sum(1 for k in BLOCK_KEYWORDS if k in text)
+
+
+def signal_score(text):
+    text = text.lower()
+    return sum(0.5 for k in SIGNAL_KEYWORDS if k in text)
+
+
+def push_to_notion(title, abstract, url, score):
+
+    data = {
+        "parent": {"database_id": DATABASE_ID},
+        "properties": {
+            "Name": {
+                "title": [{"text": {"content": title}}]
+            },
+            "Abstract": {
+                "rich_text": [{"text": {"content": abstract[:2000]}}]
+            },
+            "Source_URL": {
+                "url": url
+            },
+            "Score": {
+                "number": score
+            },
+            "Status":{
+                "select":{"name":"New"}
+            },
+            "Published_Date":{
+                "date":{"start":datetime.utcnow().isoformat()}
+            }
+        }
+    }
+
+    requests.post(NOTION_URL, headers=HEADERS, json=data)
+
+
+def process_feed(feed_url):
+
+    feed = feedparser.parse(feed_url)
+
+    for entry in feed.entries:
+
+        title = entry.title
+        abstract = entry.summary
+        url = entry.link
+
+        text = (title + " " + abstract).lower()
+
+        if word_count(abstract) < 180:
             continue
-        text_content = get_property_text(old_prop)
-        if not text_content:
+
+        if not contains_keyword(text, CORE_KEYWORDS):
             continue
-        # 判断属性类型
-        if "title" in old_prop:
-            updates[new_field] = {"title": [{"text": {"content": text_content}}]}
-        elif "rich_text" in old_prop:
-            updates[new_field] = {"rich_text": [{"text": {"content": text_content}}]}
-        elif "url" in old_prop:
-            updates[new_field] = {"url": text_content}
-        elif "date" in old_prop:
-            updates[new_field] = {"date": {"start": text_content}}
-        elif "select" in old_prop:
-            updates[new_field] = {"select": {"name": text_content}}
-        elif "multi_select" in old_prop:
-            updates[new_field] = {"multi_select": [{"name": n.strip()} for n in text_content.split(",")]}
-        # 清空旧字段
-        updates[old_field] = {}
-    
-    if updates:
-        resp = requests.patch(f"{NOTION_BASE_URL}/{page_id}", headers=HEADERS, json={"properties": updates})
-        if resp.status_code == 200:
-            print(f"✅ 字段迁移成功: {page_id}")
-        else:
-            print(f"❌ 字段迁移失败: {page_id}, {resp.status_code}, {resp.text}")
 
-    # --------- 删除摘要 < 180 字 ---------
-    abstract_prop = properties.get("Abstract") or properties.get("abstract")  # 兼容大小写
-    abstract_text = get_property_text(abstract_prop)
-    if len(abstract_text) < MIN_ABSTRACT_LENGTH:
-        del_resp = requests.delete(f"{NOTION_BASE_URL}/{page_id}", headers=HEADERS)
-        if del_resp.status_code == 200:
-            print(f"🗑️ 删除摘要不足180字的文章: {page_id}")
-        else:
-            print(f"❌ 删除失败: {page_id}, {del_resp.status_code}, {del_resp.text}")
+        if block_keyword_count(text) >= 2:
+            continue
 
-# =========================
-# 主程序
-# =========================
+        score = 5 + signal_score(text)
 
-all_pages = get_all_pages(DATABASE_ID)
-print(f"📌 共获取 {len(all_pages)} 条页面，开始迁移字段 + 删除摘要 <180字文章...")
+        push_to_notion(title, abstract, url, score)
 
-for page in all_pages:
-    migrate_and_delete(page)
-    time.sleep(0.2)  # 避免请求过快
 
-print("🎯 迁移与删除操作完成。")
+def main():
+
+    for feed in RSS_FEEDS:
+        process_feed(feed)
+
+
+if __name__ == "__main__":
+    main()
