@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import config
 
 # ----------------------------------------------------
-# 类 1：Notion 客户端（负责写入数据库）
+# 类 1：Notion 客户端
 # ----------------------------------------------------
 class NotionClient:
     def __init__(self):
@@ -24,9 +24,7 @@ class NotionClient:
     def create_page(self, payload):
         url = "https://api.notion.com/v1/pages"
         try:
-            response = self.session.post(
-                url, headers=self.headers, json=payload, timeout=config.TIMEOUT
-            )
+            response = self.session.post(url, headers=self.headers, json=payload)
             return response.status_code in (200, 201), response
         except Exception as e:
             return False, None
@@ -50,7 +48,7 @@ class RssFetcher:
         return all_entries
 
 # ----------------------------------------------------
-# 类 3：文章处理器（清洗、分词、日期、标签）
+# 类 3：文章处理器
 # ----------------------------------------------------
 class ArticleProcessor:
     @staticmethod
@@ -88,7 +86,7 @@ class ArticleProcessor:
             return "Custom"
 
 # ----------------------------------------------------
-# 主系统：串联所有功能
+# 主系统
 # ----------------------------------------------------
 class RssToNotionSystem:
     def __init__(self):
@@ -113,49 +111,45 @@ class RssToNotionSystem:
 
             if word_count >= config.MIN_ABSTRACT_WORDS:
                 print(f"✅ 达标（≥{config.MIN_ABSTRACT_WORDS} 词），开始写入 Notion...")
-                self._send_entry(feed_url, entry)
+                self.send_entry(feed_url, entry)
                 if config.SEND_ONLY_ONE:
                     print("\n🎉 任务完成：已发送 1 篇")
                     return
 
         print("\nℹ️ 未找到符合条件的文章")
 
-def _send_entry(self, feed_url, entry):
-    title = entry.get("title", "No Title")[:200]
-    abstract = self.processor.clean(entry.get("summary", ""))[:2000]
-    source_url = entry.get("link", "")
-    published = self.processor.extract_date(entry)
-    tag = self.processor.get_source_tag(feed_url)
-    ingested_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    # ✅ 这里修复：正确函数名 send_entry
+    def send_entry(self, feed_url, entry):
+        title = entry.get("title", "No Title")[:200]
+        abstract = self.processor.clean(entry.get("summary", ""))[:2000]
+        source_url = entry.get("link", "")
+        published = self.processor.extract_date(entry)
+        tag = self.processor.get_source_tag(feed_url)
+        ingested_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    payload = {
-        "parent": {"database_id": self.notion.database_id},
-        "properties": {
-            "Title": {
-                "title": [{"text": {"content": title}}]
-            },
-            "Abstract": {
-                "rich_text": [{"text": {"content": abstract}}]
-            },
-            "Source_URL": {
-                "url": source_url
-            },
-            "Status": {
-                "select": {"name": "Ingested"}
+        payload = {
+            "parent": {"database_id": self.notion.database_id},
+            "properties": {
+                "Title": {"title": [{"text": {"content": title}}]},
+                "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
+                "Source_URL": {"url": source_url},
+                "Published_Date": {"date": {"start": published}},
+                "RSS_Feed_Tag": {"select": {"name": tag}},
+                "Ingested_At": {"date": {"start": ingested_at}},
+                "Scanned": {"checkbox": False},
+                "Status": {"select": {"name": "Ingested"}}
             }
         }
-    }
 
-    success, res = self.notion.create_page(payload)
-    if success:
-        print("✅ 成功写入 Notion 数据库！")
-    else:
-        # 打印真实错误
-        if res is not None:
-            print("❌ Notion 返回错误：", res.status_code)
-            print("📛 错误信息：", res.text[:1000])
+        success, res = self.notion.create_page(payload)
+        if success:
+            print("✅ 成功写入 Notion 数据库！")
         else:
-            print("❌ 网络或连接异常")
+            if res:
+                print("❌ 错误码:", res.status_code)
+                print("📛 错误信息:", res.text[:800])
+            else:
+                print("❌ 连接失败")
 
 # ----------------------------------------------------
 # 运行
