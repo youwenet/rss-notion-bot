@@ -17,79 +17,76 @@ class NotionClient:
 
     def create_page(self, payload):
         try:
-            r = requests.post(
-                "https://api.notion.com/v1/pages",
-                headers=self.headers,
-                json=payload,
-                timeout=20
-            )
+            r = requests.post("https://api.notion.com/v1/pages", headers=self.headers, json=payload, timeout=15)
             return r.status_code in (200, 201)
         except:
             return False
+
+class ArticleFilter:
+    @staticmethod
+    def should_ingest(title, abstract):
+        text = (title + " " + abstract).lower()
+        word_count = len(abstract.split())
+
+        # 字数太少
+        if word_count < config.MIN_ABSTRACT_WORDS:
+            return False, "too short"
+
+        # TIER 3：排除（≥2 个直接拒绝）
+        exclude_count = sum(1 for kw in config.EXCLUDE_KEYWORDS if kw in text)
+        if exclude_count >= 2:
+            return False, f"excluded ({exclude_count})"
+
+        # TIER 1：必须命中核心词
+        core_count = sum(1 for kw in config.CORE_KEYWORDS if kw in text)
+        if core_count == 0:
+            return False, "no core keyword"
+
+        # TIER 2：信号标记
+        signal_count = sum(1 for kw in config.SIGNAL_KEYWORDS if kw in text)
+        if signal_count >= 2:
+            flag = "High Signal"
+        elif signal_count == 1:
+            flag = "Medium Signal"
+        else:
+            flag = "Standard"
+
+        return True, flag
 
 class RssFetcher:
     def __init__(self):
         self.feeds = config.RSS_FEEDS
 
-    def get_first_valid(self):
+    def get_qualified_article(self):
         for url in self.feeds:
             try:
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
-                    abstract = BeautifulSoup(entry.get("summary",""), "html.parser").get_text(strip=True)
-                    words = len(abstract.split())
-                    if words >= 100:  # 降低门槛，确保能抓到
-                        return url, entry
+                    title = entry.get("title", "")
+                    raw_abs = entry.get("summary", "")
+                    abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)
+                    ok, reason = ArticleFilter.should_ingest(title, abstract)
+                    if ok:
+                        return entry, reason
             except:
                 continue
         return None, None
-
-class ArticleUtils:
-    @staticmethod
-    def safe_date(entry):
-        for k in ["published", "updated", "date"]:
-            if hasattr(entry, k):
-                val = getattr(entry, k)
-                if len(val) >= 10:
-                    return val[:10]
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    @staticmethod
-    def extract_doi(entry):
-        if hasattr(entry, "doi"):
-            return entry.doi
-        if "doi:" in entry.get("summary", ""):
-            return entry.get("summary").split("doi:")[-1].split()[0]
-        return ""
-
-    @staticmethod
-    def journal(feed_url):
-        if "arxiv.org" in feed_url: return "arXiv"
-        if "nature.com" in feed_url: return "Nature"
-        if "pubmed.gov" in feed_url: return "PubMed"
-        if "cell.com" in feed_url: return "Cell"
-        if "mit.edu" in feed_url: return "MIT"
-        return "Unknown"
 
 class RssToNotionSystem:
     def __init__(self):
         self.notion = NotionClient()
         self.fetcher = RssFetcher()
-        self.utils = ArticleUtils()
 
     def run(self):
-        print("🚀 最终完整版 · 所有字段正常")
-        feed_url, entry = self.fetcher.get_first_valid()
+        print("🚀 ModelCraft Content Filter + Notion Writer")
+        entry, signal_flag = self.fetcher.get_qualified_article()
         if not entry:
-            print("ℹ️ 无文章")
+            print("ℹ️ no qualified article")
             return
 
-        title = entry.get("title", "No Title")[:150]
+        title = entry.get("title")[:150]
         abstract = BeautifulSoup(entry.get("summary",""), "html.parser").get_text(strip=True)[:1500]
         source_url = entry.get("link", "")
-        published = self.utils.safe_date(entry)
-        journal = self.utils.journal(feed_url)
-        doi = self.utils.extract_doi(entry)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         payload = {
@@ -102,19 +99,14 @@ class RssToNotionSystem:
                 "Scanned": { "checkbox": False },
                 "RSS_Feed_Tag": { "select": { "name": "Custom" } },
                 "Ingested_At": { "date": { "start": now } },
-                "Published_Date": { "date": { "start": published } },
-                "Journal": { "rich_text": [{"text": {"content": journal}}] },
-                "DOI": { "rich_text": [{"text": {"content": doi}}] }
+                "Signal_Flag": { "select": { "name": signal_flag } }
             }
         }
 
         if self.notion.create_page(payload):
-            print("✅ ✅ ✅ 全部写入成功！")
-            print("📅 日期:", published)
-            print("📰 期刊:", journal)
-            print("🔗 DOI:", doi)
+            print(f"✅ success | {signal_flag}")
         else:
-            print("❌ 失败")
+            print("❌ failed")
 
 if __name__ == "__main__":
     system = RssToNotionSystem()
