@@ -3,89 +3,72 @@ import feedparser
 import requests
 from datetime import datetime
 
-# ------------- 配置 -------------
+# ------------------ 配置 ------------------
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
 DATABASE_ID = os.environ.get("DATABASE_ID")
 NOTION_URL = "https://api.notion.com/v1/pages"
-
 HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28"
 }
 
-# 只测试一条 RSS
-TEST_RSS = "https://rss.arxiv.org/rss/cs.AI"  # 可以换成任何你想测试的 RSS
-
-# 核心关键词（可以先用少量测试）
-CORE_KEYWORDS = [
-    "cognitive bias", "mental model", "heuristic", "decision making"
+# 53 个 RSS 源（示例，替换为实际全部53条）
+RSS_FEEDS = [
+    "https://arxiv.org/rss/cs.AI",
+    "https://arxiv.org/rss/cs.CL",
+    "https://arxiv.org/rss/cs.LG",
+    # ... 其余50条 RSS 链接
 ]
 
-# ------------- 工具函数 -------------
+# ------------------ 函数 ------------------
+def fetch_articles():
+    """
+    获取每个 RSS 的最新文章，摘要 >=150 词，返回一条测试文章
+    """
+    for feed_url in RSS_FEEDS:
+        feed = feedparser.parse(feed_url)
+        for entry in feed.entries:
+            summary_words = len(entry.get("summary", "").split())
+            if summary_words >= 150:
+                return {
+                    "title": entry.get("title", "No Title"),
+                    "abstract": entry.get("summary", "No Abstract"),
+                    "link": entry.get("link", ""),
+                    "feed_tag": feed_url.split("/")[2]  # 用域名简单标记源
+                }
+    return None
 
-def word_count(text):
-    return len(text.split())
-
-def contains_keyword(text, keywords):
-    text = text.lower()
-    return any(k.lower() in text for k in keywords)
-
-# ------------- 推送到 Notion -------------
-
-def push_to_notion(title, abstract, url):
+def push_to_notion(article):
+    """
+    推送单篇文章到 Notion
+    """
     data = {
         "parent": {"database_id": DATABASE_ID},
         "properties": {
-            "Title": {"title": [{"text": {"content": title}}]},
-            "Abstract": {"rich_text": [{"text": {"content": abstract[:2000]}}]},
-            "Source_URL": {"url": url},
-            "Status": {"select": {"name": "📥 Ingested"}},
+            "Title": {"title": [{"text": {"content": article["title"]}}]},
+            "Abstract": {"rich_text": [{"text": {"content": article["abstract"]}}]},
+            "Source_URL": {"url": article["link"]},
+            "RSS_Feed_Tag": {"select": {"name": article["feed_tag"]}},
+            "Status": {"select": {"name": "New"}},
             "Ingested_At": {"date": {"start": datetime.utcnow().isoformat()}}
         }
     }
+    try:
+        resp = requests.post(NOTION_URL, headers=HEADERS, json=data)
+        resp.raise_for_status()
+        print("✅ 推送成功！Notion 返回：")
+        print(resp.json())
+    except requests.exceptions.HTTPError as e:
+        print("❌ HTTPError:", e.response.status_code, e.response.text)
+    except Exception as e:
+        print("❌ Exception:", str(e))
 
-    response = requests.post(NOTION_URL, headers=HEADERS, json=data)
-    print("==== 推送 Notion 返回 ====")
-    print("Status Code:", response.status_code)
-    print("Response:", response.text)
-
-# ------------- RSS 处理 -------------
-
-def process_feed(feed_url):
-    feed = feedparser.parse(feed_url)
-
-    if not feed.entries:
-        print("没有抓到任何文章:", feed_url)
-        return
-
-    # 只处理第一条文章
-    entry = feed.entries[0]
-
-    title = entry.title
-    abstract = getattr(entry, "summary", "")
-    url = entry.link
-
-    print("==== 测试文章信息 ====")
-    print("标题:", title)
-    print("摘要字数:", word_count(abstract))
-    print("摘要预览:", abstract[:200])
-    print("链接:", url)
-
-    # 关键词过滤
-    text = (title + " " + abstract).lower()
-    if not contains_keyword(text, CORE_KEYWORDS):
-        print("⚠️ 不包含核心关键词，仍然推送测试")
-    else:
-        print("✅ 包含核心关键词")
-
-    # 推送到 Notion
-    push_to_notion(title, abstract, url)
-
-# ------------- 主函数 -------------
-
-def main():
-    process_feed(TEST_RSS)
-
+# ------------------ 主流程 ------------------
 if __name__ == "__main__":
-    main()
+    article = fetch_articles()
+    if article:
+        print("找到符合条件的文章，开始推送...")
+        push_to_notion(article)
+    else:
+        print("没有找到摘要 >=150 词的文章，等待下一次运行。")
