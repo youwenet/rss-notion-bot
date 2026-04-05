@@ -1,72 +1,75 @@
-# rss_to_notion.py
 import os
-import requests
 import feedparser
+import requests
 from datetime import datetime
 
-# ===== 配置 =====
+# -------------------------
+# 读取 Notion Key & Database
+# -------------------------
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
 DATABASE_ID = os.environ.get("DATABASE_ID")
 
+NOTION_URL = "https://api.notion.com/v1/pages"
+HEADERS = {
+    "Authorization": f"Bearer {NOTION_API_KEY}",
+    "Content-Type": "application/json",
+    "Notion-Version": "2022-06-28"
+}
+
+# -------------------------
+# RSS 源列表 (示例)
+# -------------------------
 RSS_FEEDS = [
-    "https://arxiv.org/rss/cs.LG",
-    "https://www.nature.com/nature.rss",
-    # 你可以继续加 RSS 链接
+    "https://arxiv.org/rss/cs",
+    "https://arxiv.org/rss/stat",
+    "https://arxiv.org/rss/econ",
+    # 后续加入剩余 50 个 RSS
 ]
 
-MIN_ABSTRACT_WORDS = 20  # 摘要词数门槛
+# -------------------------
+# 遍历 RSS
+# -------------------------
+for feed_url in RSS_FEEDS:
+    print(f"\n📡 Processing RSS feed: {feed_url}")
+    try:
+        feed = feedparser.parse(feed_url)
+        if not feed.entries:
+            print("⚠️ No entries found in this feed.")
+            continue
 
-# ===== Notion API 写入函数 =====
-def create_notion_page(title, abstract, url, journal, published_date, rss_tag):
-    notion_url = "https://api.notion.com/v1/pages"
-    headers = {
-        "Authorization": f"Bearer {NOTION_API_KEY}",
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-    }
+        # 取第一条文章
+        entry = feed.entries[0]
+        title = entry.get("title", "No Title")
+        summary = entry.get("summary", "")
+        link = entry.get("link", "")
 
-    data = {
-        "parent": {"database_id": DATABASE_ID},
-        "properties": {
-            "Title": {"title": [{"text": {"content": title}}]},
-            "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
-            "Source_URL": {"url": url},
-            "Journal": {"rich_text": [{"text": {"content": journal}}]},
-            "Published_Date": {"date": {"start": published_date}},
-            "RSS_Feed_Tag": {"select": {"name": rss_tag}},
-            "Ingested_At": {"date": {"start": datetime.utcnow().isoformat()}},
-            "Scanned": {"checkbox": False},
+        # 忽略摘要少于 150 个词的文章
+        if len(summary.split()) < 150:
+            print(f"⚠️ Skipping article, summary too short ({len(summary.split())} words).")
+            continue
+
+        # 构建 Notion payload
+        payload = {
+            "parent": {"database_id": DATABASE_ID},
+            "properties": {
+                "Title": {"title": [{"text": {"content": title}}]},
+                "Abstract": {"rich_text": [{"text": {"content": summary}}]},
+                "Source_URL": {"url": link},
+                "Status": {"select": {"name": "New"}},
+                "Ingested_At": {"date": {"start": datetime.utcnow().isoformat()}}
+            }
         }
-    }
 
-    response = requests.post(notion_url, headers=headers, json=data)
-    if response.status_code == 200:
-        print(f"✅ 成功写入 Notion: {title}")
-    else:
-        print(f"❌ 写入失败: {response.status_code} {response.text}")
+        # 推送到 Notion
+        response = requests.post(NOTION_URL, headers=HEADERS, json=payload, timeout=20)
+        response.raise_for_status()
+        print(f"✅ Article pushed successfully: {title}")
+        print(response.json())
 
-# ===== RSS 解析函数 =====
-def fetch_rss_articles(rss_url, rss_tag):
-    feed = feedparser.parse(rss_url)
-    for entry in feed.entries:
-        abstract = entry.get("summary", "") or entry.get("description", "")
-        word_count = len(abstract.split())
-        if word_count >= MIN_ABSTRACT_WORDS:
-            title = entry.get("title", "No Title")
-            url = entry.get("link", "")
-            journal = rss_tag  # 简单用 RSS tag 作为 Journal
-            published_date = entry.get("published", datetime.utcnow().isoformat())
-            create_notion_page(title, abstract, url, journal, published_date, rss_tag)
-            break  # 只写入一条，测试模式
-    else:
-        print(f"⚠️ RSS 没有符合条件的文章: {rss_tag}")
+        # 只测试第一条，推送成功后 break
+        break
 
-# ===== 主函数 =====
-def main():
-    for rss_url in RSS_FEEDS:
-        tag = rss_url.split("//")[-1].split("/")[0]
-        print(f"🔎 处理 RSS 源: {rss_url} (tag={tag})")
-        fetch_rss_articles(rss_url, tag)
-
-if __name__ == "__main__":
-    main()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Network/HTTP error: {str(e)}")
+    except Exception as e:
+        print(f"❌ Unexpected error: {str(e)}")
