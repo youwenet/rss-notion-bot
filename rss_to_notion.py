@@ -17,13 +17,12 @@ HEADERS = {
 }
 
 # -------------------------
-# RSS 源列表 (示例)
+# RSS 源列表 (示例，后续可加满 53 条)
 # -------------------------
 RSS_FEEDS = [
     "https://arxiv.org/rss/cs",
     "https://arxiv.org/rss/stat",
     "https://arxiv.org/rss/econ",
-    # 后续加入剩余 50 个 RSS
 ]
 
 # -------------------------
@@ -43,8 +42,8 @@ for feed_url in RSS_FEEDS:
         summary = entry.get("summary", "")
         link = entry.get("link", "")
 
-        # 忽略摘要少于 150 个词的文章
-        if len(summary.split()) < 150:
+        # 忽略摘要少于 20 个词的文章
+        if len(summary.split()) < 20:
             print(f"⚠️ Skipping article, summary too short ({len(summary.split())} words).")
             continue
 
@@ -66,7 +65,7 @@ for feed_url in RSS_FEEDS:
         print(f"✅ Article pushed successfully: {title}")
         print(response.json())
 
-        # 只测试第一条，推送成功后 break
+        # 只测试第一条文章
         break
 
     except requests.exceptions.RequestException as e:
