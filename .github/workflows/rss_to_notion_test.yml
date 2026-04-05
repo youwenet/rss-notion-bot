@@ -1,4 +1,4 @@
-name: RSS to Notion Test
+name: rss to notion test
 
 on:
   workflow_dispatch:       # 手动触发
