@@ -2,6 +2,7 @@ import os
 import feedparser
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime, timezone
 import config
 
 class NotionClient:
@@ -44,7 +45,7 @@ class RssToNotionSystem:
         self.fetcher = RssFetcher()
 
     def run(self):
-        print("🚀 测试版：加回 Scanned + RSS_Feed_Tag")
+        print("🚀 加回 Ingested_At")
         feed_url, entry = self.fetcher.get_first_valid()
         if not entry:
             print("ℹ️ 无文章")
@@ -53,10 +54,10 @@ class RssToNotionSystem:
         title = entry.get("title", "Test")[:100]
         abstract = BeautifulSoup(entry.get("summary",""), "html.parser").get_text(strip=True)[:1500]
         source = entry.get("link", "")
+        
+        # 时间格式（Notion 标准）
+        now = datetime.now(timezone.utc).isoformat()
 
-        # =====================
-        # 只加回 2 个字段
-        # =====================
         payload = {
             "parent": { "database_id": self.notion.database_id },
             "properties": {
@@ -64,19 +65,18 @@ class RssToNotionSystem:
                 "Abstract": { "rich_text": [{"text": {"content": abstract}}] },
                 "Source_URL": { "url": source },
                 "Status": { "select": { "name": "Ingested" } },
-                
-                # 加回 1
                 "Scanned": { "checkbox": False },
+                "RSS_Feed_Tag": { "select": { "name": "Custom" } },
                 
-                # 加回 2
-                "RSS_Feed_Tag": { "select": { "name": "Custom" } }
+                # 加回最后一个
+                "Ingested_At": { "date": { "start": now } }
             }
         }
 
         if self.notion.create_page(payload):
-            print("✅ ✅ ✅ 成功写入！")
+            print("✅ ✅ ✅ 全部字段都成功！")
         else:
-            print("❌ 写入失败 → 就是刚加的这两个字段有问题！")
+            print("❌ 失败 → 问题在 Ingested_At")
 
 if __name__ == "__main__":
     system = RssToNotionSystem()
