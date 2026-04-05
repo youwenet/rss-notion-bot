@@ -32,6 +32,43 @@ class NotionClient:
             print(f"⚠️ Notion 请求异常: {e}")
             return False
 
+    def query_existing(self, doi=None, url=None):
+        """智能去重：优先查DOI，没有再查URL"""
+        filters = []
+        
+        if doi and doi.strip():
+            filters.append({
+                "property": "DOI",
+                "rich_text": {"contains": doi.strip()}
+            })
+        
+        if url and url.strip():
+            filters.append({
+                "property": "Source_URL",
+                "url": {"equals": url.strip()}
+            })
+
+        if not filters:
+            return False
+
+        payload = {
+            "filter": {
+                "or": filters
+            }
+        }
+
+        try:
+            res = requests.post(
+                f"https://api.notion.com/v1/databases/{self.database_id}/query",
+                headers=self.headers,
+                json=payload,
+                timeout=10
+            )
+            data = res.json()
+            return len(data.get("results", [])) > 0
+        except:
+            return False
+
 # ------------------------------------------------------------------------------
 # 三层关键词筛选引擎
 # ------------------------------------------------------------------------------
@@ -47,21 +84,17 @@ class ContentFilter:
         full_text = title_clean + " " + abs_clean
         word_count = len(abstract.split())
 
-        # 基础字数过滤
         if word_count < config.MIN_ABSTRACT_WORDS:
             return False, f"字数不足 ({word_count})"
 
-        # Tier3：排除词 ≥2 直接拒绝
         exclude_hits = sum(1 for kw in config.EXCLUDE_KEYWORDS if kw in full_text)
         if exclude_hits >= 2:
             return False, f"排除词命中 {exclude_hits} 个"
 
-        # Tier1：必须命中至少一个核心词
         core_hits = sum(1 for kw in config.CORE_KEYWORDS if kw in full_text)
         if core_hits == 0:
             return False, "无核心关键词"
 
-        # Tier2：信号分级
         signal_hits = sum(1 for kw in config.SIGNAL_KEYWORDS if kw in full_text)
         if signal_hits >= 2:
             signal_flag = "High Signal"
@@ -73,7 +106,31 @@ class ContentFilter:
         return True, signal_flag
 
 # ------------------------------------------------------------------------------
-# RSS 抓取 + 按规则筛选
+# DOI 提取工具
+# ------------------------------------------------------------------------------
+class DOIExtractor:
+    @staticmethod
+    def extract(entry):
+        # 从 entry 字段取
+        if hasattr(entry, "doi") and entry.doi:
+            return entry.doi.strip()
+
+        # 从摘要提取
+        text = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True).lower()
+        match = re.search(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", text)
+        if match:
+            return match.group(0).strip()
+
+        # 从链接提取
+        link = entry.get("link", "")
+        match = re.search(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", link.lower())
+        if match:
+            return match.group(0).strip()
+
+        return ""
+
+# ------------------------------------------------------------------------------
+# RSS 抓取
 # ------------------------------------------------------------------------------
 class RSSCollector:
     def __init__(self):
@@ -91,12 +148,12 @@ class RSSCollector:
                     ok, reason = ContentFilter.should_ingest(title, abstract)
                     if ok:
                         return entry, reason
-            except Exception as e:
+            except:
                 continue
         return None, None
 
 # ------------------------------------------------------------------------------
-# 主系统入口
+# 主系统
 # ------------------------------------------------------------------------------
 class ModelCraftContentSystem:
     def __init__(self):
@@ -105,7 +162,7 @@ class ModelCraftContentSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 自动化内容筛选系统 v1.0 ")
+        print(" ModelCraft 自动化内容筛选 + 智能去重系统 v1.0 ")
         print("=" * 70)
 
         entry, signal_flag = self.collector.fetch_best_article()
@@ -117,41 +174,34 @@ class ModelCraftContentSystem:
         raw_abstract = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True)
         abstract = raw_abstract[:1500]
         source_url = entry.get("link", "")
+        doi = DOIExtractor.extract(entry)
         ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+        # 去重判断
+        if self.notion.query_existing(doi=doi, url=source_url):
+            print("✅ 已存在，跳过重复文章")
+            return
+
+        # 写入 Notion
         payload = {
             "parent": {"database_id": self.notion.database_id},
             "properties": {
-                "Title": {
-                    "title": [{"text": {"content": title}}]
-                },
-                "Abstract": {
-                    "rich_text": [{"text": {"content": abstract}}]
-                },
-                "Source_URL": {
-                    "url": source_url
-                },
-                "Status": {
-                    "select": {"name": "Ingested"}
-                },
-                "Scanned": {
-                    "checkbox": False
-                },
-                "RSS_Feed_Tag": {
-                    "select": {"name": "Custom"}
-                },
-                "Ingested_At": {
-                    "date": {"start": ingested_at}
-                },
-                "Signal_Flag": {
-                    "select": {"name": signal_flag}
-                }
+                "Title": {"title": [{"text": {"content": title}}]},
+                "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
+                "Source_URL": {"url": source_url},
+                "Status": {"select": {"name": "Ingested"}},
+                "Scanned": {"checkbox": False},
+                "RSS_Feed_Tag": {"select": {"name": "Custom"}},
+                "Ingested_At": {"date": {"start": ingested_at}},
+                "Signal_Flag": {"select": {"name": signal_flag}},
+                "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]}
             }
         }
 
         if self.notion.create_page(payload):
             print(f"✅ 写入成功 | {signal_flag}")
-            print(f"标题: {title[:80]}...")
+            print(f"标题: {title[:70]}...")
+            print(f"DOI: {doi if doi else '无'}")
         else:
             print("❌ 写入 Notion 失败")
 
