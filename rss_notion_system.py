@@ -2,7 +2,6 @@ import os
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone
 import config
 
 class NotionClient:
@@ -45,30 +44,39 @@ class RssToNotionSystem:
         self.fetcher = RssFetcher()
 
     def run(self):
-        print("🚀 系统启动（极简必成功版）")
+        print("🚀 测试版：加回 Scanned + RSS_Feed_Tag")
         feed_url, entry = self.fetcher.get_first_valid()
         if not entry:
-            print("ℹ️ 无符合条件文章")
+            print("ℹ️ 无文章")
             return
 
         title = entry.get("title", "Test")[:100]
         abstract = BeautifulSoup(entry.get("summary",""), "html.parser").get_text(strip=True)[:1500]
         source = entry.get("link", "")
 
+        # =====================
+        # 只加回 2 个字段
+        # =====================
         payload = {
             "parent": { "database_id": self.notion.database_id },
             "properties": {
                 "Title": { "title": [{"text": {"content": title}}] },
                 "Abstract": { "rich_text": [{"text": {"content": abstract}}] },
                 "Source_URL": { "url": source },
-                "Status": { "select": { "name": "Ingested" } }
+                "Status": { "select": { "name": "Ingested" } },
+                
+                # 加回 1
+                "Scanned": { "checkbox": False },
+                
+                # 加回 2
+                "RSS_Feed_Tag": { "select": { "name": "Custom" } }
             }
         }
 
         if self.notion.create_page(payload):
-            print("✅ ✅ ✅ 成功写入 NOTION！！！")
+            print("✅ ✅ ✅ 成功写入！")
         else:
-            print("❌ 写入失败")
+            print("❌ 写入失败 → 就是刚加的这两个字段有问题！")
 
 if __name__ == "__main__":
     system = RssToNotionSystem()
