@@ -1,15 +1,14 @@
-name: RSS to Notion Automation
+name: rss to notion
 
 on:
-  schedule:
-    - cron: "0 0 * * *"  # UTC 0 点 = 北京时间 8 点
   workflow_dispatch:       # 手动触发
+  schedule:
+    - cron: "0 0 * * *"   # 每天 UTC 0 点
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
       DATABASE_ID: ${{ secrets.DATABASE_ID }}
 
@@ -25,5 +24,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install feedparser requests beautifulsoup4
 
-      - name: Run RSS to Notion script
+      - name: Run RSS to Notion Script
         run: python rss_to_notion.py
