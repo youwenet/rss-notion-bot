@@ -28,11 +28,11 @@ class NotionClient:
             )
             return response.status_code in (200, 201), response
         except Exception as e:
-            print("💥 请求异常:", str(e))
+            print(f"💥 请求异常: {str(e)}")
             return False, None
 
 # ----------------------------------------------------
-# RSS 抓取
+# RSS 抓取器
 # ----------------------------------------------------
 class RssFetcher:
     def __init__(self):
@@ -43,14 +43,13 @@ class RssFetcher:
         for url in self.feed_urls:
             try:
                 feed = feedparser.parse(url)
-                for entry in feed.entries:
-                    entries.append((url, entry))
+                entries.extend((url, entry) for entry in feed.entries)
             except:
                 continue
         return entries
 
 # ----------------------------------------------------
-# 文章处理
+# 文章处理器（核心：强制截断摘要）
 # ----------------------------------------------------
 class ArticleProcessor:
     @staticmethod
@@ -91,29 +90,32 @@ class RssToNotionSystem:
 
     def run(self):
         print("=" * 60)
-        print("🚀 自动化内容系统 | 类+配置架构")
+        print("🚀 自动化内容系统 | 类+配置架构（已修复长度限制）")
         print("=" * 60)
 
         entries = self.fetcher.fetch()
 
         for feed_url, entry in entries:
             title = entry.get("title", "No Title")
-            abstract_raw = entry.get("summary", "")
-            abstract_clean = self.proc.clean(abstract_raw)
-            wc = self.proc.word_count(abstract_clean)
+            raw_abstract = entry.get("summary", "")
+            abstract = self.proc.clean(raw_abstract)
+            wc = self.proc.word_count(abstract)
 
             print(f"📝 {wc} 词 | {title[:60]}")
 
             if wc >= config.MIN_ABSTRACT_WORDS:
-                print(f"✅ 达标，写入 Notion...")
+                print(f"✅ 达标（≥{config.MIN_ABSTRACT_WORDS} 词），开始写入 Notion...")
                 self.send_entry(feed_url, entry)
-                return
+                if config.SEND_ONLY_ONE:
+                    print("\n🎉 任务完成：已发送 1 篇")
+                    return
 
-        print("ℹ️ 未找到符合条件文章")
+        print("\nℹ️ 未找到符合条件的文章")
 
     def send_entry(self, feed_url, entry):
-        title = entry.get("title", "No Title")[:190]
-        abstract = self.proc.clean(entry.get("summary", ""))[:1900]
+        # ✅ 核心修复：强制截断，永远不超 Notion 限制
+        title = entry.get("title", "No Title")[:200]  # 标题限200字符
+        abstract = self.proc.clean(entry.get("summary", ""))[:1900]  # 摘要限1900字符（留冗余）
         source_url = entry.get("link", "")
         pub_date = self.proc.extract_date(entry)
         tag = self.proc.get_tag(feed_url)
@@ -122,43 +124,27 @@ class RssToNotionSystem:
         payload = {
             "parent": {"database_id": self.notion.database_id},
             "properties": {
-                "Title": {
-                    "title": [{"text": {"content": title}}]
-                },
-                "Abstract": {
-                    "rich_text": [{"text": {"content": abstract}}]
-                },
-                "Source_URL": {
-                    "url": source_url
-                },
-                "Published_Date": {
-                    "date": {"start": pub_date}
-                },
-                "RSS_Feed_Tag": {
-                    "select": {"name": tag}
-                },
-                "Ingested_At": {
-                    "date": {"start": now}
-                },
-                "Scanned": {
-                    "checkbox": False
-                },
-                "Status": {
-                    "select": {"name": "Ingested"}
-                }
+                "Title": {"title": [{"text": {"content": title}}]},
+                "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
+                "Source_URL": {"url": source_url},
+                "Published_Date": {"date": {"start": pub_date}},
+                "RSS_Feed_Tag": {"select": {"name": tag}},
+                "Ingested_At": {"date": {"start": now}},
+                "Scanned": {"checkbox": False},
+                "Status": {"select": {"name": "Ingested"}}
             }
         }
 
         ok, res = self.notion.create_page(payload)
         if ok:
-            print("✅ 成功写入 Notion！")
+            print("✅ 成功写入 Notion 数据库！")
         else:
             if res:
-                print("❌ 状态码:", res.status_code)
-                print("📛 返回:", res.text[:1000])
+                print(f"❌ 错误码: {res.status_code}")
+                print(f"📛 错误信息: {res.text[:800]}")
 
 # ----------------------------------------------------
-# 入口
+# 运行
 # ----------------------------------------------------
 if __name__ == "__main__":
     system = RssToNotionSystem()
