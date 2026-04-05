@@ -72,8 +72,8 @@ class RssToNotionSystem:
             return
 
         title = entry.get("title", "No Title")[:200]
-        # 放大摘要到 1900 字符，足够打分
-        abstract = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True)[:1900]
+        # ✅ 这里改成 1500 字符，绝对安全
+        abstract = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True)[:1500]
         source_url = entry.get("link", "")
         published_date = self.utils.extract_published_date(entry)
         tag = self.utils.get_tag(feed_url)
