@@ -2,11 +2,12 @@ import os
 import requests
 from datetime import datetime
 
-# 从 GitHub Secrets 获取环境变量
-NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
-DATABASE_ID = os.environ.get("DATABASE_ID")
+# ---------- 配置 Notion Key 和数据库 ----------
+NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "你的本地测试 Notion API Key")
+DATABASE_ID = os.environ.get("DATABASE_ID", "你的本地测试数据库ID")
 
 NOTION_URL = "https://api.notion.com/v1/pages"
+
 HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
     "Content-Type": "application/json",
@@ -15,35 +16,32 @@ HEADERS = {
 
 # ---------- 测试文章 ----------
 test_article = {
-    "title": "测试文章标题",
-    "abstract": "这是一条用于测试的摘要，确保Notion可以写入数据。文字长度超过50字，以满足条件要求。",
-    "source_url": "https://example.com/test-article",
-    "status": "New"
+    "parent": {"database_id": DATABASE_ID},
+    "properties": {
+        "Title": {
+            "title": [{"text": {"content": "🚀 测试文章 - Notion 推送成功验证"}}]
+        },
+        "Abstract": {
+            "rich_text": [{"text": {"content": "这是一条测试摘要，用于验证 RSS 自动推送到 Notion 是否成功。摘要长度超过50个字保证通过条件。"}}]
+        },
+        "Source_URL": {"url": "https://example.com/test-article"},
+        "Status": {"select": {"name": "New"}},
+        "Ingested_At": {"date": {"start": datetime.utcnow().isoformat()}}
+    }
 }
 
-# ---------- 判断摘要长度 ----------
-if len(test_article["abstract"]) < 50:
-    print("❌ 摘要不足50字，跳过写入")
-else:
-    # 构造 Notion 推送数据
-    notion_payload = {
-        "parent": {"database_id": DATABASE_ID},
-        "properties": {
-            "Title": {"title": [{"text": {"content": test_article["title"]}}]},
-            "Abstract": {"rich_text": [{"text": {"content": test_article["abstract"]}}]},
-            "Source_URL": {"url": test_article["source_url"]},
-            "Status": {"select": {"name": test_article["status"]}},
-            "Ingested_At": {"date": {"start": datetime.utcnow().isoformat()}}
-        }
-    }
-
-    # ---------- 推送到 Notion ----------
+# ---------- 推送函数 ----------
+def push_to_notion(article):
     try:
-        response = requests.post(NOTION_URL, headers=HEADERS, json=notion_payload)
+        response = requests.post(NOTION_URL, headers=HEADERS, json=article)
         response.raise_for_status()
-        print("✅ 推送成功！Notion 返回：")
+        print("✅ 推送成功，Notion 返回：")
         print(response.json())
     except requests.exceptions.HTTPError as e:
         print("❌ HTTPError:", e.response.status_code, e.response.text)
     except Exception as e:
         print("❌ Exception:", str(e))
+
+# ---------- 主程序 ----------
+if __name__ == "__main__":
+    push_to_notion(test_article)
