@@ -3,7 +3,6 @@
 # 以后所有参数、RSS、规则都在这里修改
 # ======================================
 
-
 # ======================================
 # 关键字筛选系统 | TIER 1/2/3
 # ======================================
@@ -98,30 +97,18 @@ EXCLUDE_KEYWORDS = [
     "policy implementation", "government program", "public health intervention"
 ]
 
-# 基础配置
-MIN_ABSTRACT_WORDS = 150
+# ======================================
+# 全局运行参数
+# ======================================
 NOTION_VERSION = "2022-06-28"
 TIMEOUT = 15
 
-# RSS 源不变
-RSS_FEEDS = [
-    "https://neurosciencenews.com/feed/",
-    "news.mit.edu/feed/rss.xml",
-    # 你原来的全部 RSS
-]
-
-# Notion API
-NOTION_VERSION = "2022-06-28"
-TIMEOUT = 15
-
-# 筛选规则
 MIN_ABSTRACT_WORDS = 150  # 正式：150词
 SEND_ONLY_ONE = True      # 只发1条
 
-
-
-
-# RSS 订阅源（你全部的高质量源）
+# ======================================
+# RSS 订阅源（全部高质量学术/媒体源）
+# ======================================
 RSS_FEEDS = [
     "https://neurosciencenews.com/feed",
     "https://news.mit.edu/rss/topic/neuroscience",
