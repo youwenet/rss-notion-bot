@@ -4,23 +4,22 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 
-# ========== 核心：强制降低门槛，必发送 1 条 ==========
-MIN_WORD_COUNT = 10  # 超级低门槛
-SEND_ONLY_ONE = True
-# ====================================================
+# 强制发第一条，不做任何判断
+FORCE_SEND_FIRST = True
 
-requests.adapters.DEFAULT_RETRIES = 1
+# 超时防卡死
+requests.adapters.DEFAULT_RETRIES = 0
 SESSION = requests.Session()
-SESSION.timeout = 15
+SESSION.timeout = 10
 
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
 DATABASE_ID = os.getenv("DATABASE_ID")
 NOTION_VERSION = "2022-06-28"
 
-RSS_FEEDS = [
-    "https://arxiv.org/rss/cs.AI",
-    "https://www.nature.com/nature.rss",
-]
+# 只留一个最稳的 RSS
+RSS_FEEDS = ["https://arxiv.org/rss/cs.AI"]
+
+# ==========================================
 
 def clean_text(html_text):
     if not html_text:
@@ -28,76 +27,68 @@ def clean_text(html_text):
     soup = BeautifulSoup(html_text, "html.parser")
     return soup.get_text(strip=True)
 
-def count_words(text):
-    return len(text.split())
-
-def get_rss_feed_tag(feed_url):
-    if "arxiv.org" in feed_url:
-        return "arXiv"
-    elif "nature.com" in feed_url:
-        return "Nature"
-    return "Custom"
-
-def send_to_notion(entry, feed_tag):
+def send_to_notion(entry):
     url = "https://api.notion.com/v1/pages"
+
     headers = {
         "Authorization": f"Bearer {NOTION_API_KEY}",
         "Notion-Version": NOTION_VERSION,
         "Content-Type": "application/json"
     }
 
-    title = entry.get("title", "Test Title")[:150]
-    abstract = clean_text(entry.get("summary", ""))[:1500]
+    title = entry.get("title", "TEST 标题")[:100]
+    abstract = clean_text(entry.get("summary", ""))[:1000]
     source_url = entry.get("link", "")
-    ingested_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+    # 极简到不能再极简的字段
     data = {
-        "parent": {"database_id": DATABASE_ID},
+        "parent": { "database_id": DATABASE_ID },
         "properties": {
-            "Title": {"title": [{"text": {"content": title}}]},
-            "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
-            "Source_URL": {"url": source_url},
-            "RSS_Feed_Tag": {"select": {"name": feed_tag}},
-            "Scanned": {"checkbox": False},
-            "Status": {"select": {"name": "Ingested"}},
-            "Ingested_At": {"date": {"start": ingested_at}}
+            "Title": {
+                "title": [{ "text": { "content": title } }]
+            },
+            "Abstract": {
+                "rich_text": [{ "text": { "content": abstract } }]
+            },
+            "Source_URL": { "url": source_url },
+            "Status": { "select": { "name": "Ingested" } },
+            "Scanned": { "checkbox": False }
         }
     }
 
     try:
+        print("📤 正在发送...")
         r = SESSION.post(url, headers=headers, json=data)
         print(f"✅ NOTION 状态码: {r.status_code}")
-        return r.status_code in (200, 201)
-    except:
-        print("❌ 发送失败")
+        if r.status_code in (200,201):
+            print("🎉 成功！去 Notion 看！")
+        else:
+            print("❌ 错误：", r.text[:500])
+        return r.status_code in (200,201)
+    except Exception as e:
+        print("💥 发送失败：", str(e))
         return False
 
+# ==========================================
+
 def main():
-    print("🚀 开始运行 RSS 抓取...")
-    print(f"NOTION_API_KEY 存在: {bool(NOTION_API_KEY)}")
-    print(f"DATABASE_ID 存在: {bool(DATABASE_ID)}")
+    print("🚀 启动")
+    print("🔑 API KEY:", "存在" if NOTION_API_KEY else "缺失")
+    print("🆔 DB ID:", "存在" if DATABASE_ID else "缺失")
 
     if not NOTION_API_KEY or not DATABASE_ID:
-        print("❌ 密钥未配置")
+        print("❌ 密钥缺失")
         return
 
-    sent = False
-    for feed_url in RSS_FEEDS:
-        if sent: break
-        feed = feedparser.parse(feed_url)
-        tag = get_rss_feed_tag(feed_url)
+    feed = feedparser.parse(RSS_FEEDS[0])
+    if not feed.entries:
+        print("❌ 无文章")
+        return
 
-        for entry in feed.entries[:10]:
-            wc = count_words(clean_text(entry.get("summary", "")))
-            print(f"词数: {wc} | {entry.get('title')[:50]}")
-
-            # 强制发送第一条，不管词数
-            print("✅ 强制发送第一条测试！")
-            if send_to_notion(entry, tag):
-                print("🎉 成功发到 NOTION！")
-                return
-
-    print("ℹ️ 结束")
+    first = feed.entries[0]
+    print("✅ 取第一条文章，直接发送")
+    send_to_notion(first)
 
 if __name__ == "__main__":
     main()
