@@ -32,7 +32,7 @@ jobs:
           pip install feedparser requests beautifulsoup4 --timeout 120
           pip list
 
-      - name: Run RSS to Notion Script with Output
+      - name: Run RSS to Notion Script
         run: |
           echo "Starting rss_to_notion.py..."
           python -u rss_to_notion.py
