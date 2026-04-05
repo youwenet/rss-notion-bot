@@ -1,4 +1,6 @@
 import os
+import time
+import re
 import feedparser
 import requests
 from datetime import datetime
@@ -7,6 +9,7 @@ NOTION_API_KEY = os.environ["NOTION_API_KEY"]
 DATABASE_ID = os.environ["DATABASE_ID"]
 
 NOTION_URL = "https://api.notion.com/v1/pages"
+QUERY_URL = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
@@ -15,198 +18,77 @@ HEADERS = {
 }
 
 ############################################################
-# 53 RSS SOURCES
+# RSS SOURCES
 ############################################################
 
 RSS_FEEDS = [
 
-# arXiv Cognitive / AI
 "https://rss.arxiv.org/rss/cs.AI",
 "https://rss.arxiv.org/rss/cs.CY",
 "https://rss.arxiv.org/rss/cs.HC",
 "https://rss.arxiv.org/rss/cs.CL",
 "https://rss.arxiv.org/rss/cs.SI",
 
-# Complexity
 "https://rss.arxiv.org/rss/nlin.AO",
 "https://rss.arxiv.org/rss/nlin.CD",
 "https://rss.arxiv.org/rss/physics.soc-ph",
 
-# Quantitative biology
 "https://rss.arxiv.org/rss/q-bio.NC",
 "https://rss.arxiv.org/rss/q-bio.PE",
 
-# Statistics / ML
 "https://rss.arxiv.org/rss/stat.ML",
 
-# Nature
 "https://www.nature.com/subjects/psychology.rss",
 "https://www.nature.com/subjects/complex-systems.rss",
 "https://www.nature.com/subjects/behavioural-sciences.rss",
 
-# Science
 "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
-
-# PNAS
 "https://www.pnas.org/rss/current.xml",
 
-# ScienceDaily
 "https://www.sciencedaily.com/rss/mind_brain/cognition.xml",
 "https://www.sciencedaily.com/rss/mind_brain/psychology.xml",
 "https://www.sciencedaily.com/rss/mind_brain/neuroscience.xml",
-"https://www.sciencedaily.com/rss/mind_brain/learning.xml",
 
-# Frontiers
 "https://www.frontiersin.org/journals/psychology/rss",
 "https://www.frontiersin.org/journals/neuroscience/rss",
 
-# Behavioral Econ
 "https://rss.ssrn.com/Behavioral-Economics.xml",
-
-# Economics
 "https://rss.ssrn.com/Economics.xml",
-
-# Management
 "https://rss.ssrn.com/Management.xml",
 
-# MIT Tech Review
 "https://www.technologyreview.com/feed/",
-
-# PsyPost
 "https://www.psypost.org/feed",
-
-# Aeon Essays
 "https://aeon.co/feed.rss",
-
-# Quanta
 "https://www.quantamagazine.org/feed/",
-
-# BigThink
 "https://bigthink.com/feed/",
-
-# Harvard Business Review
 "https://hbr.org/feed",
-
-# Stanford Social Innovation
 "https://ssir.org/site/rss",
-
-# Behavioral Scientist
 "https://behavioralscientist.org/feed/",
-
-# Nautilus
 "https://nautil.us/feed/",
-
-# Edge
 "https://www.edge.org/feed",
-
-# Brookings
 "https://www.brookings.edu/feed/",
-
-# RAND
 "https://www.rand.org/topics/behavioral-science.rss",
-
-# NBER
 "https://www.nber.org/rss/new.xml",
-
-# Additional academic
-"https://rss.arxiv.org/rss/econ.EM",
-"https://rss.arxiv.org/rss/econ.TH",
 
 ]
 
 ############################################################
-# CORE KEYWORDS
+# KEYWORDS
 ############################################################
 
 CORE_KEYWORDS = [
-
-# Cognitive Science
-"cognitive bias","mental model","heuristic","cognitive load",
-"decision making","dual process","metacognition","working memory",
-"attention","perception","executive function","cognitive flexibility",
-"framing effect","anchoring bias","confirmation bias","sunk cost",
-"cognitive dissonance",
-
-# Extensions
-"reasoning","judgment","inference","belief updating",
-"mental representation","schema","prototype theory",
-"category learning","concept formation",
-
-# Systems Thinking
-"systems thinking","feedback loop","emergence",
-"complex adaptive system","nonlinear dynamics",
-"network effects","tipping point","self organization",
-"chaos theory","cascading failure","resilience",
-"agent based model","second order effect",
-"complexity","interdependence","system dynamics",
-"leverage point","bottleneck","reinforcing loop","balancing loop",
-
-# Learning Science
-"learning","memory consolidation","spaced repetition",
-"retrieval practice","desirable difficulty","interleaving",
-"sleep and memory","neuroplasticity","skill acquisition",
-"expertise","forgetting curve","transfer learning",
-"growth mindset","deliberate practice",
-
-# Learning extensions
-"encoding","recall","recognition","long term memory",
-"episodic memory","semantic memory","attention and learning",
-
-# Behavioral Science
-"behavioral economics","nudge","social norm",
-"conformity","social influence","cooperation",
-"trust","reciprocity","status seeking","group behavior",
-"collective intelligence","social contagion",
-"polarization","moral psychology","prosocial behavior",
-"incentive",
-
-# Neuroscience
-"dopamine","reward system","stress response",
-"cortisol","default mode network","prefrontal cortex",
-"amygdala","habit formation","sleep","prediction error",
-"emotional regulation","brain plasticity",
-
-# Entrepreneurship
-"entrepreneurship","innovation","startup",
-"organizational learning","leadership","team dynamics",
-"creativity","risk perception","overconfidence",
-"failure","network","grit","self efficacy",
-
-# Wealth
-"financial decision","wealth","loss aversion",
-"present bias","scarcity mindset","mental accounting",
-"inequality","saving behavior","investment behavior",
-"status","time preference",
-
-# AI cognition
-"human AI interaction","AI decision making",
-"automation bias","cognitive offloading",
-"algorithm aversion","AI literacy",
-"large language model","intelligence augmentation"
+"cognitive","decision","bias","mental model",
+"system","complexity","learning","memory",
+"behavior","psychology","social","neuroscience",
+"innovation","entrepreneur","leadership",
+"attention","habit","motivation","skill",
+"AI","human AI","automation"
 ]
-
-############################################################
-# SIGNAL KEYWORDS
-############################################################
-
-SIGNAL_KEYWORDS = [
-"paradox","counterintuitive","surprising","unexpected",
-"illusion","myth","irrational","hidden","invisible",
-"why people","how humans","what predicts","when people",
-"despite","more likely","worse than"
-]
-
-############################################################
-# BLOCK KEYWORDS
-############################################################
 
 BLOCK_KEYWORDS = [
-"clinical trial","patient","diagnosis","treatment",
-"drug","medication","dosage","placebo",
-"cancer","tumor","disease","syndrome",
-"gene expression","protein","genome","cell",
-"algorithm performance","benchmark","GPU",
-"dataset","compiler","hardware"
+"cancer","tumor","gene","protein",
+"clinical","patient","treatment",
+"GPU","benchmark","dataset"
 ]
 
 ############################################################
@@ -214,75 +96,207 @@ BLOCK_KEYWORDS = [
 def word_count(text):
     return len(text.split())
 
-def contains_keyword(text, keywords):
+def contains_keyword(text):
     text = text.lower()
-    return any(k in text for k in keywords)
+    return any(k in text for k in CORE_KEYWORDS)
 
-def block_keyword_count(text):
+def block_keyword(text):
     text = text.lower()
-    return sum(1 for k in BLOCK_KEYWORDS if k in text)
-
-def signal_score(text):
-    text = text.lower()
-    return sum(0.5 for k in SIGNAL_KEYWORDS if k in text)
+    return any(k in text for k in BLOCK_KEYWORDS)
 
 ############################################################
+# GET EXISTING URLS (dedup)
+############################################################
 
-def push_to_notion(title, abstract, url, score):
+def get_existing_urls():
+
+    urls = set()
+    has_more = True
+    start_cursor = None
+
+    while has_more:
+
+        payload = {}
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+
+        r = requests.post(QUERY_URL, headers=HEADERS, json=payload)
+        data = r.json()
+
+        for page in data["results"]:
+
+            props = page["properties"]
+
+            if "Source_URL" in props and props["Source_URL"]["url"]:
+                urls.add(props["Source_URL"]["url"])
+
+        has_more = data["has_more"]
+        start_cursor = data.get("next_cursor")
+
+    return urls
+
+############################################################
+# DOI extraction
+############################################################
+
+def extract_doi(text):
+
+    match = re.search(r'10.\d{4,9}/[-._;()/:A-Z0-9]+', text, re.I)
+
+    if match:
+        return match.group(0)
+
+    return ""
+
+############################################################
+# PUSH TO NOTION
+############################################################
+
+def push_to_notion(title, abstract, url, journal, doi, rss_tag):
 
     data = {
+
         "parent": {"database_id": DATABASE_ID},
+
         "properties": {
-            "Name": {
-                "title": [{"text": {"content": title}}]
+
+            "Title": {
+                "title": [
+                    {"text": {"content": title}}
+                ]
             },
+
             "Abstract": {
-                "rich_text": [{"text": {"content": abstract[:2000]}}]
+                "rich_text": [
+                    {"text": {"content": abstract[:2000]}}
+                ]
             },
-            "Source_URL": {"url": url},
-            "Score": {"number": score},
-            "Status":{"select":{"name":"New"}},
+
+            "Source_URL": {
+                "url": url
+            },
+
+            "Journal": {
+                "rich_text":[
+                    {"text":{"content": journal}}
+                ]
+            },
+
+            "DOI": {
+                "rich_text":[
+                    {"text":{"content": doi}}
+                ]
+            },
+
+            "RSS_Feed_Tag":{
+                "select":{
+                    "name": rss_tag
+                }
+            },
+
+            "Status":{
+                "select":{
+                    "name":"Ingested"
+                }
+            },
+
             "Published_Date":{
-                "date":{"start":datetime.utcnow().isoformat()}
+                "date":{
+                    "start":datetime.utcnow().isoformat()+"Z"
+                }
+            },
+
+            "Ingested_At":{
+                "date":{
+                    "start":datetime.utcnow().isoformat()+"Z"
+                }
+            },
+
+            "Scanned":{
+                "checkbox":False
             }
+
         }
     }
 
-    requests.post(NOTION_URL, headers=HEADERS, json=data)
+    r = requests.post(NOTION_URL, headers=HEADERS, json=data)
+
+    if r.status_code != 200:
+        print("ERROR:", r.text)
+
+    time.sleep(0.35)
 
 ############################################################
+# PROCESS RSS
+############################################################
 
-def process_feed(feed_url):
+def process_feed(feed_url, existing_urls):
+
+    pushed = 0
 
     feed = feedparser.parse(feed_url)
 
+    rss_tag = feed.feed.get("title","RSS")
+
     for entry in feed.entries:
 
-        title = entry.title
-        abstract = entry.summary
-        url = entry.link
+        title = entry.get("title","")
+        abstract = entry.get("summary","")
+        url = entry.get("link","")
 
-        text = (title + " " + abstract).lower()
-
-        if word_count(abstract) < 180:
+        if not url or url in existing_urls:
             continue
 
-        if not contains_keyword(text, CORE_KEYWORDS):
+        text = (title + " " + abstract)
+
+        if word_count(abstract) < 150:
             continue
 
-        if block_keyword_count(text) >= 2:
+        if not contains_keyword(text):
             continue
 
-        score = 5 + signal_score(text)
+        if block_keyword(text):
+            continue
 
-        push_to_notion(title, abstract, url, score)
+        doi = extract_doi(text)
 
+        journal = entry.get("source",{}).get("title","Unknown")
+
+        push_to_notion(title, abstract, url, journal, doi, rss_tag)
+
+        pushed += 1
+
+    return pushed
+
+############################################################
+# MAIN
 ############################################################
 
 def main():
 
+    print("Loading existing URLs...")
+
+    existing_urls = get_existing_urls()
+
+    print("Existing:", len(existing_urls))
+
+    total_pushed = 0
+
     for feed in RSS_FEEDS:
-        process_feed(feed)
+
+        try:
+
+            pushed = process_feed(feed, existing_urls)
+
+            print("Feed done:", pushed)
+
+            total_pushed += pushed
+
+        except Exception as e:
+
+            print("Feed error:", e)
+
+    print("Total pushed:", total_pushed)
 
 ############################################################
 
