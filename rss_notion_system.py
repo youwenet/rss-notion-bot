@@ -6,15 +6,12 @@ from datetime import datetime, timezone
 import config
 
 # ----------------------------------------------------
-# 类 1：Notion 客户端
+# Notion 客户端
 # ----------------------------------------------------
 class NotionClient:
     def __init__(self):
         self.api_key = os.getenv("NOTION_API_KEY")
         self.database_id = os.getenv("DATABASE_ID")
-        self.session = requests.Session()
-        self.session.timeout = config.TIMEOUT
-
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Notion-Version": config.NOTION_VERSION,
@@ -22,33 +19,38 @@ class NotionClient:
         }
 
     def create_page(self, payload):
-        url = "https://api.notion.com/v1/pages"
         try:
-            response = self.session.post(url, headers=self.headers, json=payload)
+            response = requests.post(
+                "https://api.notion.com/v1/pages",
+                headers=self.headers,
+                json=payload,
+                timeout=20
+            )
             return response.status_code in (200, 201), response
         except Exception as e:
+            print("💥 请求异常:", str(e))
             return False, None
 
 # ----------------------------------------------------
-# 类 2：RSS 抓取器
+# RSS 抓取
 # ----------------------------------------------------
 class RssFetcher:
     def __init__(self):
         self.feed_urls = config.RSS_FEEDS
 
     def fetch(self):
-        all_entries = []
+        entries = []
         for url in self.feed_urls:
             try:
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
-                    all_entries.append((url, entry))
+                    entries.append((url, entry))
             except:
                 continue
-        return all_entries
+        return entries
 
 # ----------------------------------------------------
-# 类 3：文章处理器
+# 文章处理
 # ----------------------------------------------------
 class ArticleProcessor:
     @staticmethod
@@ -63,27 +65,20 @@ class ArticleProcessor:
 
     @staticmethod
     def extract_date(entry):
-        for key in ["published", "updated", "date"]:
-            if hasattr(entry, key):
-                val = getattr(entry, key)
-                if len(val) >= 10:
-                    return val[:10]
+        for k in ["published", "updated", "date"]:
+            if hasattr(entry, k):
+                s = getattr(entry, k)
+                if len(s) >= 10:
+                    return s[:10]
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     @staticmethod
-    def get_source_tag(feed_url):
-        if "arxiv.org" in feed_url:
-            return "arXiv"
-        elif "nature.com" in feed_url:
-            return "Nature"
-        elif "pubmed.gov" in feed_url:
-            return "PubMed"
-        elif "cell.com" in feed_url:
-            return "Cell"
-        elif "mit.edu" in feed_url:
-            return "MIT"
-        else:
-            return "Custom"
+    def get_tag(feed_url):
+        if "arxiv.org" in feed_url: return "arXiv"
+        if "nature.com" in feed_url: return "Nature"
+        if "pubmed.gov" in feed_url: return "PubMed"
+        if "cell.com" in feed_url: return "Cell"
+        return "Custom"
 
 # ----------------------------------------------------
 # 主系统
@@ -92,67 +87,78 @@ class RssToNotionSystem:
     def __init__(self):
         self.notion = NotionClient()
         self.fetcher = RssFetcher()
-        self.processor = ArticleProcessor()
+        self.proc = ArticleProcessor()
 
     def run(self):
         print("=" * 60)
-        print("🚀 自动化内容系统 | 类+配置架构 已启动")
+        print("🚀 自动化内容系统 | 类+配置架构")
         print("=" * 60)
 
         entries = self.fetcher.fetch()
 
         for feed_url, entry in entries:
             title = entry.get("title", "No Title")
-            raw_abstract = entry.get("summary", "")
-            abstract = self.processor.clean(raw_abstract)
-            word_count = self.processor.word_count(abstract)
+            abstract_raw = entry.get("summary", "")
+            abstract_clean = self.proc.clean(abstract_raw)
+            wc = self.proc.word_count(abstract_clean)
 
-            print(f"📝 {word_count} 词 | {title[:60]}")
+            print(f"📝 {wc} 词 | {title[:60]}")
 
-            if word_count >= config.MIN_ABSTRACT_WORDS:
-                print(f"✅ 达标（≥{config.MIN_ABSTRACT_WORDS} 词），开始写入 Notion...")
+            if wc >= config.MIN_ABSTRACT_WORDS:
+                print(f"✅ 达标，写入 Notion...")
                 self.send_entry(feed_url, entry)
-                if config.SEND_ONLY_ONE:
-                    print("\n🎉 任务完成：已发送 1 篇")
-                    return
+                return
 
-        print("\nℹ️ 未找到符合条件的文章")
+        print("ℹ️ 未找到符合条件文章")
 
-    # ✅ 这里修复：正确函数名 send_entry
     def send_entry(self, feed_url, entry):
-        title = entry.get("title", "No Title")[:200]
-        abstract = self.processor.clean(entry.get("summary", ""))[:2000]
+        title = entry.get("title", "No Title")[:190]
+        abstract = self.proc.clean(entry.get("summary", ""))[:1900]
         source_url = entry.get("link", "")
-        published = self.processor.extract_date(entry)
-        tag = self.processor.get_source_tag(feed_url)
-        ingested_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        pub_date = self.proc.extract_date(entry)
+        tag = self.proc.get_tag(feed_url)
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         payload = {
             "parent": {"database_id": self.notion.database_id},
             "properties": {
-                "Title": {"title": [{"text": {"content": title}}]},
-                "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
-                "Source_URL": {"url": source_url},
-                "Published_Date": {"date": {"start": published}},
-                "RSS_Feed_Tag": {"select": {"name": tag}},
-                "Ingested_At": {"date": {"start": ingested_at}},
-                "Scanned": {"checkbox": False},
-                "Status": {"select": {"name": "Ingested"}}
+                "Title": {
+                    "title": [{"text": {"content": title}}]
+                },
+                "Abstract": {
+                    "rich_text": [{"text": {"content": abstract}}]
+                },
+                "Source_URL": {
+                    "url": source_url
+                },
+                "Published_Date": {
+                    "date": {"start": pub_date}
+                },
+                "RSS_Feed_Tag": {
+                    "select": {"name": tag}
+                },
+                "Ingested_At": {
+                    "date": {"start": now}
+                },
+                "Scanned": {
+                    "checkbox": False
+                },
+                "Status": {
+                    "select": {"name": "Ingested"}
+                }
             }
         }
 
-        success, res = self.notion.create_page(payload)
-        if success:
-            print("✅ 成功写入 Notion 数据库！")
+        ok, res = self.notion.create_page(payload)
+        if ok:
+            print("✅ 成功写入 Notion！")
         else:
             if res:
-                print("❌ 错误码:", res.status_code)
-                print("📛 错误信息:", res.text[:800])
-            else:
-                print("❌ 连接失败")
+                print("❌ 状态码:", res.status_code)
+                print("📛 返回:", res.text[:1000])
 
 # ----------------------------------------------------
-# 运行
+# 入口
 # ----------------------------------------------------
 if __name__ == "__main__":
     system = RssToNotionSystem()
