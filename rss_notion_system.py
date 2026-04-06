@@ -196,7 +196,7 @@ class RSSFetcher:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
-                    if not PublishDateExtractor.is_recent(entry, days=30):
+                    if not PublishDateExtractor.is_recent(entry, days=40):
                         continue
                     title = entry.get("title", "")
                     raw_abs = entry.get("summary", "")
@@ -218,12 +218,12 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 严格模式｜最近30天全量扫描 ")
+        print(" ModelCraft 严格模式｜最近40天全量扫描 ")
         print("=" * 70)
 
         articles = self.fetcher.fetch_all_qualified()
         total_found = len(articles)
-        print(f"✅ 近30天符合严格条件文章：{total_found}")
+        print(f"✅ 近40天符合严格条件文章：{total_found}")
 
         if total_found == 0:
             print("ℹ️ 无合格文章")
