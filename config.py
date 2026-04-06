@@ -104,17 +104,15 @@ NOTION_VERSION = "2022-06-28"
 TIMEOUT = 15
 
 MIN_ABSTRACT_WORDS = 150  # 正式：150词
-SEND_ONLY_ONE = True      # 只发1条
 
 # ======================================
-# RSS 订阅源（全部高质量学术/媒体源）
+# RSS 订阅源（全部实测有效）
 # ======================================
 RSS_FEEDS = [
     "https://neurosciencenews.com/feed",
     "https://news.mit.edu/rss/topic/neuroscience",
     "https://knowingneurons.com/feed",
     "https://behavioralscientist.org/feed",
-    "https://behavioraleconomics.com/feed",
     "https://socialsciencespace.com/feed",
     "https://blogs.lse.ac.uk/impactofsocialsciences/feed",
     "https://www.sciencenews.org/feed",
@@ -152,7 +150,6 @@ RSS_FEEDS = [
     "https://www.cell.com/neuron/rss",
     "https://www.apa.org/pubs/journals/xge/feed",
     "https://www.journals.elsevier.com/behavioral-brain-research/rss",
-    "https://www.springer.com/journal/13415/rss",
 
     "https://arxiv.org/rss/cs.CC",
     "https://arxiv.org/rss/cs.NE",
@@ -161,6 +158,5 @@ RSS_FEEDS = [
     "https://arxiv.org/rss/cs.MS",
 
     "https://www.technologyreview.com/feed/",
-    "https://www.economist.com/feeds/print-sections/233.xml",
-    "https://learningandthebrain.com/blog/feed",
+    "https://www.economist.com/feeds/print-sections/233.xml"
 ]
