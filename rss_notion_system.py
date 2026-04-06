@@ -33,13 +33,13 @@ class NotionClient:
             return False
 
     def query_existing(self, doi=None, url=None):
-        """智能去重：优先查DOI，没有再查URL"""
+        """优先 DOI 去重，没有再用 URL"""
         filters = []
         
         if doi and doi.strip():
             filters.append({
                 "property": "DOI",
-                "rich_text": {"contains": doi.strip()}
+                "rich_text": {"equals": doi.strip()}
             })
         
         if url and url.strip():
@@ -52,9 +52,7 @@ class NotionClient:
             return False
 
         payload = {
-            "filter": {
-                "or": filters
-            }
+            "filter": {"or": filters}
         }
 
         try:
@@ -70,7 +68,7 @@ class NotionClient:
             return False
 
 # ------------------------------------------------------------------------------
-# 三层关键词筛选引擎
+# 三层关键词筛选
 # ------------------------------------------------------------------------------
 class ContentFilter:
     @staticmethod
@@ -106,28 +104,58 @@ class ContentFilter:
         return True, signal_flag
 
 # ------------------------------------------------------------------------------
-# DOI 提取工具
+# DOI 提取（加固版）
 # ------------------------------------------------------------------------------
 class DOIExtractor:
     @staticmethod
     def extract(entry):
-        # 从 entry 字段取
-        if hasattr(entry, "doi") and entry.doi:
-            return entry.doi.strip()
+        # 1. 取 doi 字段
+        if hasattr(entry, "doi"):
+            d = str(entry.doi).strip()
+            if d.startswith("10."):
+                return d
 
-        # 从摘要提取
-        text = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True).lower()
-        match = re.search(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", text)
+        # 2. 摘要里匹配
+        text = entry.get("summary", "")
+        clean_text = BeautifulSoup(text, "html.parser").get_text(strip=True)
+        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", clean_text, re.I)
         if match:
             return match.group(0).strip()
 
-        # 从链接提取
+        # 3. 链接里提取
         link = entry.get("link", "")
-        match = re.search(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", link.lower())
+        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", link, re.I)
         if match:
             return match.group(0).strip()
 
         return ""
+
+# ------------------------------------------------------------------------------
+# 发布时间 Published_Date 提取
+# ------------------------------------------------------------------------------
+class PublishDateExtractor:
+    @staticmethod
+    def extract(entry):
+        candidates = [
+            entry.get("published", ""),
+            entry.get("updated", ""),
+            entry.get("pubDate", ""),
+            entry.get("date", ""),
+        ]
+        for date_str in candidates:
+            if not date_str:
+                continue
+            try:
+                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                return dt.strftime("%Y-%m-%d")
+            except:
+                pass
+            try:
+                dt = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z")
+                return dt.strftime("%Y-%m-%d")
+            except:
+                continue
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 # ------------------------------------------------------------------------------
 # RSS 抓取
@@ -144,7 +172,6 @@ class RSSCollector:
                     title = entry.get("title", "")
                     summary = entry.get("summary", "")
                     abstract = BeautifulSoup(summary, "html.parser").get_text(strip=True)
-
                     ok, reason = ContentFilter.should_ingest(title, abstract)
                     if ok:
                         return entry, reason
@@ -162,7 +189,7 @@ class ModelCraftContentSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 自动化内容筛选 + 智能去重系统 v1.0 ")
+        print(" ModelCraft 完整系统 v1.0｜筛选 + 去重 + DOI + 发布时间 ")
         print("=" * 70)
 
         entry, signal_flag = self.collector.fetch_best_article()
@@ -170,19 +197,23 @@ class ModelCraftContentSystem:
             print("ℹ️ 未找到符合条件的文章")
             return
 
+        # 基础信息
         title = entry.get("title", "No Title")[:180]
         raw_abstract = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True)
         abstract = raw_abstract[:1500]
         source_url = entry.get("link", "")
+        
+        # 增强字段
         doi = DOIExtractor.extract(entry)
+        published_at = PublishDateExtractor.extract(entry)
         ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # 去重判断
+        # 去重
         if self.notion.query_existing(doi=doi, url=source_url):
             print("✅ 已存在，跳过重复文章")
             return
 
-        # 写入 Notion
+        # 写入
         payload = {
             "parent": {"database_id": self.notion.database_id},
             "properties": {
@@ -194,7 +225,8 @@ class ModelCraftContentSystem:
                 "RSS_Feed_Tag": {"select": {"name": "Custom"}},
                 "Ingested_At": {"date": {"start": ingested_at}},
                 "Signal_Flag": {"select": {"name": signal_flag}},
-                "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]}
+                "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
+                "Published_Date": {"date": {"start": published_at}}
             }
         }
 
@@ -202,6 +234,7 @@ class ModelCraftContentSystem:
             print(f"✅ 写入成功 | {signal_flag}")
             print(f"标题: {title[:70]}...")
             print(f"DOI: {doi if doi else '无'}")
+            print(f"发布时间: {published_at}")
         else:
             print("❌ 写入 Notion 失败")
 
