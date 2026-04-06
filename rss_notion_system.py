@@ -228,7 +228,7 @@ class ModelCraftSystem:
         for entry, feed_url, signal_flag in articles:
             title = entry.get("title", "No Title")[:180]
             raw_abs = entry.get("summary", "")
-            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1900]
+            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1800]
             source_url = entry.get("link", "")
             doi = DOIExtractor.extract(entry)
             published = PublishDateExtractor.extract(entry)
