@@ -159,7 +159,7 @@ class RSSFetcher:
     def __init__(self):
         self.feeds = config.RSS_FEEDS
 
-    def fetch_qualified_articles(self, limit=10):
+    def fetch_qualified_articles(self, limit=50):
         results = []
         for feed_url in self.feeds:
             try:
@@ -190,7 +190,7 @@ class ModelCraftSystem:
         print(" ModelCraft 内容系统｜50条批量推送 + 期刊自动识别 ")
         print("=" * 70)
 
-        articles = self.fetcher.fetch_qualified_articles(limit= 50)
+        articles = self.fetcher.fetch_qualified_articles(limit=50)
         if not articles:
             print("ℹ️ 无合格文章")
             return
