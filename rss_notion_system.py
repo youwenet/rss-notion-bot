@@ -7,6 +7,12 @@ from datetime import datetime, timedelta, timezone
 import config
 
 # ------------------------------------------------------------------------------
+# 固定日期区间（你只改这里！）
+# ------------------------------------------------------------------------------
+START_DATE = "2025-03-25"
+END_DATE = "2025-04-06"
+
+# ------------------------------------------------------------------------------
 # Notion API 客户端
 # ------------------------------------------------------------------------------
 class NotionClient:
@@ -53,7 +59,7 @@ class NotionClient:
             return False
 
 # ------------------------------------------------------------------------------
-# 严格筛选规则（完全不动）
+# 严格筛选规则
 # ------------------------------------------------------------------------------
 class ContentFilter:
     @staticmethod
@@ -93,18 +99,15 @@ class ContentFilter:
 class DOIExtractor:
     @staticmethod
     def extract(entry):
-        # 1. 优先从 entry.doi 获取
         if hasattr(entry, "doi"):
             d = str(entry.doi).strip()
             if d.startswith("10."):
                 return d
-        # 2. 从链接中提取（arXiv 专用，最强兼容）
         if hasattr(entry, "link"):
             link = entry.link
             doi_match = re.search(r"10\.\d{4,9}[^\s]*", link)
             if doi_match:
                 return doi_match.group(0).strip()
-        # 3. 从摘要文本提取
         txt = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text()
         match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", txt, re.I)
         if match:
@@ -128,28 +131,32 @@ class PublishDateExtractor:
                 return dt.strftime("%Y-%m-%d")
             except:
                 continue
-        # 只有真的获取不到发布日期时，才留空（不会再填今天）
         return None
 
     @staticmethod
-    def is_recent(entry, days=30):
-        now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(days=days)
+    def parse_entry_date(entry):
         for key in ["published", "updated", "pubDate", "date"]:
             s = entry.get(key, "")
             if not s:
                 continue
             try:
-                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-                return dt >= cutoff
+                return datetime.fromisoformat(s.replace("Z", "+00:00"))
             except:
                 pass
             try:
-                dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
-                return dt >= cutoff
+                return datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
             except:
                 continue
-        return False
+        return None
+
+    @staticmethod
+    def in_range(entry):
+        start = datetime.strptime(START_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        end = datetime.strptime(END_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        dt = PublishDateExtractor.parse_entry_date(entry)
+        if not dt:
+            return False
+        return start <= dt <= end
 
 class JournalExtractor:
     @staticmethod
@@ -161,30 +168,10 @@ class JournalExtractor:
         if "pnas.org" in url: return "PNAS"
         if "arxiv.org" in url: return "arXiv"
         if "pubmed.ncbi.nlm.nih.gov" in url: return "PubMed"
-        if "trends/cognitive-sciences" in url: return "Trends in Cognitive Sciences"
-        if "neuron" in url: return "Neuron"
-        if "current-biology" in url: return "Current Biology"
-        if "behavioral-brain-research" in url: return "Behavioral Brain Research"
-        if "sciencenews.org" in url: return "Science News"
-        if "nature.com/nathumbehav" in url: return "Nature Human Behaviour"
-        if "nature.com/neuro" in url: return "Nature Neuroscience"
-        if "mit.edu" in url: return "MIT News"
-        if "technologyreview.com" in url: return "MIT Technology Review"
-        if "economist.com" in url: return "The Economist"
-        if "scientificamerican.com" in url or "sciam.com" in url: return "Scientific American"
-        if "behavioralscientist.org" in url: return "Behavioral Scientist"
-        if "socialsciencespace.com" in url: return "Social Science Space"
-        if "lse.ac.uk" in url: return "London School of Economics"
-        if "apa.org" in url: return "APA"
-        if "springer.com" in url: return "Springer"
-        if "elsevier.com" in url: return "Elsevier"
-        if "neurosciencenews.com" in url: return "Neuroscience News"
-        if "knowingneurons.com" in url: return "Knowing Neurons"
-        if "learningandthebrain.com" in url: return "Learning & the Brain"
         return "Academic Source"
 
 # ------------------------------------------------------------------------------
-# RSS 抓取：严格筛选 + 最近30天
+# RSS 抓取：固定日期区间
 # ------------------------------------------------------------------------------
 class RSSFetcher:
     def __init__(self):
@@ -196,7 +183,7 @@ class RSSFetcher:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
-                    if not PublishDateExtractor.is_recent(entry, days=40):
+                    if not PublishDateExtractor.in_range(entry):
                         continue
                     title = entry.get("title", "")
                     raw_abs = entry.get("summary", "")
@@ -218,12 +205,12 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 严格模式｜最近40天全量扫描 ")
+        print(f" ModelCraft｜固定日期扫描：{START_DATE} → {END_DATE}")
         print("=" * 70)
 
         articles = self.fetcher.fetch_all_qualified()
         total_found = len(articles)
-        print(f"✅ 近40天符合严格条件文章：{total_found}")
+        print(f"✅ 该区间符合条件文章：{total_found}")
 
         if total_found == 0:
             print("ℹ️ 无合格文章")
@@ -242,7 +229,6 @@ class ModelCraftSystem:
             journal = JournalExtractor.extract(feed_url, entry)
             ingested = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-            # ====================== 修复 1：自动设置 RSS_Feed_Tag ======================
             feed_lower = feed_url.lower()
             if "arxiv.org" in feed_lower:
                 rss_tag = "arXiv"
@@ -254,16 +240,13 @@ class ModelCraftSystem:
                 rss_tag = "Nature"
             else:
                 rss_tag = "Custom"
-            # ==========================================================================
 
             if self.notion.is_duplicate(doi=doi, url=source_url):
                 print(f"⏭️ [{idx}/{total_found}] 已存在: {title[:50]}...")
                 skipped += 1
                 continue
 
-            # ====================== 修复 3：Published_Date 日期容错 ======================
             published_date_prop = {"date": {"start": published}} if published else None
-            # ============================================================================
 
             payload = {
                 "parent": {"database_id": self.notion.database_id},
@@ -273,15 +256,11 @@ class ModelCraftSystem:
                     "Source_URL": {"url": source_url},
                     "Status": {"select": {"name": "Ingested"}},
                     "Scanned": {"checkbox": False},
-                    # ====================== 修复 1 应用 ======================
                     "RSS_Feed_Tag": {"select": {"name": rss_tag}},
-                    # ==========================================================
                     "Ingested_At": {"date": {"start": ingested}},
                     "Signal_Flag": {"select": {"name": signal_flag}},
                     "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
-                    # ====================== 修复 3 应用 ======================
                     "Published_Date": published_date_prop,
-                    # ==========================================================
                     "Journal": {"rich_text": [{"text": {"content": journal}}]}
                 }
             }
