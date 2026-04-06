@@ -125,32 +125,43 @@ class PublishDateExtractor:
 class JournalExtractor:
     @staticmethod
     def extract(feed_url, entry):
-        # 从域名自动判断期刊名
-        if "arxiv.org" in feed_url:
-            return "arXiv"
-        if "nature.com" in feed_url:
-            return "Nature"
-        if "cell.com" in feed_url:
-            return "Cell"
-        if "sciencemag.org" in feed_url:
-            return "Science"
-        if "pnas.org" in feed_url:
-            return "PNAS"
-        if "neurosciencenews.com" in feed_url:
-            return "Neuroscience News"
-        if "mit.edu" in feed_url:
-            return "MIT News"
-        if "sciencenews.org" in feed_url:
-            return "Science News"
-        if "scientificamerican.com" in feed_url:
-            return "Scientific American"
-        if "behavioralscientist.org" in feed_url:
-            return "Behavioral Scientist"
-        if "pubmed.ncbi.nlm.nih.gov" in feed_url:
-            return "PubMed"
-        if "apa.org" in feed_url:
-            return "APA"
-        return "Unknown Journal"
+        url = feed_url.lower()
+        # 顶级学术期刊
+        if "nature.com" in url: return "Nature"
+        if "cell.com" in url: return "Cell Press"
+        if "science.org" in url or "sciencemag.org" in url: return "Science"
+        if "pnas.org" in url: return "PNAS"
+        if "arxiv.org" in url: return "arXiv"
+        if "pubmed.ncbi.nlm.nih.gov" in url: return "PubMed"
+
+        # 认知/行为/神经科学顶刊
+        if "trends/cognitive-sciences" in url: return "Trends in Cognitive Sciences"
+        if "neuron" in url: return "Neuron"
+        if "current-biology" in url: return "Current Biology"
+        if "behavioral-brain-research" in url: return "Behavioral Brain Research"
+        if "sciencenews.org" in url: return "Science News"
+        if "nature.com/nathumbehav" in url: return "Nature Human Behaviour"
+        if "nature.com/neuro" in url: return "Nature Neuroscience"
+
+        # 权威媒体 & 机构
+        if "mit.edu" in url: return "MIT News"
+        if "technologyreview.com" in url: return "MIT Technology Review"
+        if "economist.com" in url: return "The Economist"
+        if "scientificamerican.com" in url or "sciam.com" in url: return "Scientific American"
+        if "behavioralscientist.org" in url: return "Behavioral Scientist"
+        if "socialsciencespace.com" in url: return "Social Science Space"
+        if "lse.ac.uk" in url: return "London School of Economics"
+        if "apa.org" in url: return "American Psychological Association"
+        if "springer.com" in url: return "Springer"
+        if "elsevier.com" in url: return "Elsevier"
+
+        # 专业神经科学媒体
+        if "neurosciencenews.com" in url: return "Neuroscience News"
+        if "knowingneurons.com" in url: return "Knowing Neurons"
+        if "learningandthebrain.com" in url: return "Learning & the Brain"
+
+        # 兜底
+        return "Academic Source"
 
 # ------------------------------------------------------------------------------
 # RSS 抓取（一次最多 10 条）
