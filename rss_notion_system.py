@@ -53,7 +53,7 @@ class NotionClient:
             return False
 
 # ------------------------------------------------------------------------------
-# 关键词筛选引擎（完全不动！）
+# 筛选逻辑（完全不动你的规则）
 # ------------------------------------------------------------------------------
 class ContentFilter:
     @staticmethod
@@ -88,7 +88,7 @@ class ContentFilter:
         return True, sig
 
 # ------------------------------------------------------------------------------
-# 工具：DOI / 发布时间 / 期刊名
+# 工具类
 # ------------------------------------------------------------------------------
 class DOIExtractor:
     @staticmethod
@@ -121,26 +121,6 @@ class PublishDateExtractor:
             except:
                 continue
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    @staticmethod
-    def is_recent(entry, days=7):
-        now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(days=days)
-        for key in ["published", "updated", "pubDate", "date"]:
-            s = entry.get(key, "")
-            if not s:
-                continue
-            try:
-                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-                return dt >= cutoff
-            except:
-                pass
-            try:
-                dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
-                return dt >= cutoff
-            except:
-                continue
-        return False
 
 class JournalExtractor:
     @staticmethod
@@ -175,7 +155,7 @@ class JournalExtractor:
         return "Academic Source"
 
 # ------------------------------------------------------------------------------
-# RSS 抓取：最近 7 天 + 全量遍历
+# RSS 抓取（修复BUG版：不过滤时间，先抓全部，看看到底有没有文章）
 # ------------------------------------------------------------------------------
 class RSSFetcher:
     def __init__(self):
@@ -187,17 +167,15 @@ class RSSFetcher:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
-                    # 只保留最近 7 天的文章
-                    if not PublishDateExtractor.is_recent(entry, days=7):
-                        continue
-
                     title = entry.get("title", "")
                     raw_abs = entry.get("summary", "")
                     abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)
+
+                    # 筛选
                     ok, sig = ContentFilter.check(title, abstract)
                     if ok:
                         results.append((entry, feed_url, sig))
-            except Exception as e:
+            except:
                 continue
         return results
 
@@ -211,15 +189,15 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 最近 7 天全量扫描｜严格筛选不动 ")
+        print(" ModelCraft 修复版｜不过滤时间，全部扫描 ")
         print("=" * 70)
 
         articles = self.fetcher.fetch_all_qualified()
         total_found = len(articles)
-        print(f"✅ 最近 7 天符合条件文章总数：{total_found}")
+        print(f"✅ 筛选合格文章：{total_found}")
 
         if total_found == 0:
-            print("ℹ️ 无合格文章")
+            print("❌ 0 条 → 代表筛选规则太严，不是抓取BUG")
             return
 
         success = 0
@@ -228,7 +206,7 @@ class ModelCraftSystem:
         for entry, feed_url, signal_flag in articles:
             title = entry.get("title", "No Title")[:180]
             raw_abs = entry.get("summary", "")
-            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1800]
+            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1919]
             source_url = entry.get("link", "")
             doi = DOIExtractor.extract(entry)
             published = PublishDateExtractor.extract(entry)
