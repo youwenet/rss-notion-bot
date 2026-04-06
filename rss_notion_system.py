@@ -187,10 +187,10 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 内容系统｜10条批量推送 + 期刊自动识别 ")
+        print(" ModelCraft 内容系统｜20条批量推送 + 期刊自动识别 ")
         print("=" * 70)
 
-        articles = self.fetcher.fetch_qualified_articles(limit=10)
+        articles = self.fetcher.fetch_qualified_articles(limit=20)
         if not articles:
             print("ℹ️ 无合格文章")
             return
@@ -202,7 +202,7 @@ class ModelCraftSystem:
         for entry, feed_url, signal_flag in articles:
             title = entry.get("title", "No Title")[:180]
             raw_abs = entry.get("summary", "")
-            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1500]
+            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1919]
             source_url = entry.get("link", "")
             doi = DOIExtractor.extract(entry)
             published = PublishDateExtractor.extract(entry)
