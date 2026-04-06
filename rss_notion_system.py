@@ -3,7 +3,7 @@ import re
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import config
 
 # ------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ class NotionClient:
             return False
 
 # ------------------------------------------------------------------------------
-# 关键词筛选引擎
+# 关键词筛选引擎（完全不动！）
 # ------------------------------------------------------------------------------
 class ContentFilter:
     @staticmethod
@@ -122,6 +122,26 @@ class PublishDateExtractor:
                 continue
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    @staticmethod
+    def is_recent(entry, days=7):
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=days)
+        for key in ["published", "updated", "pubDate", "date"]:
+            s = entry.get(key, "")
+            if not s:
+                continue
+            try:
+                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+                return dt >= cutoff
+            except:
+                pass
+            try:
+                dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
+                return dt >= cutoff
+            except:
+                continue
+        return False
+
 class JournalExtractor:
     @staticmethod
     def extract(feed_url, entry):
@@ -146,7 +166,7 @@ class JournalExtractor:
         if "behavioralscientist.org" in url: return "Behavioral Scientist"
         if "socialsciencespace.com" in url: return "Social Science Space"
         if "lse.ac.uk" in url: return "London School of Economics"
-        if "apa.org" in url: return "American Psychological Association"
+        if "apa.org" in url: return "APA"
         if "springer.com" in url: return "Springer"
         if "elsevier.com" in url: return "Elsevier"
         if "neurosciencenews.com" in url: return "Neuroscience News"
@@ -155,7 +175,7 @@ class JournalExtractor:
         return "Academic Source"
 
 # ------------------------------------------------------------------------------
-# RSS 抓取：无上限 · 全量遍历
+# RSS 抓取：最近 7 天 + 全量遍历
 # ------------------------------------------------------------------------------
 class RSSFetcher:
     def __init__(self):
@@ -167,6 +187,10 @@ class RSSFetcher:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
+                    # 只保留最近 7 天的文章
+                    if not PublishDateExtractor.is_recent(entry, days=7):
+                        continue
+
                     title = entry.get("title", "")
                     raw_abs = entry.get("summary", "")
                     abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)
@@ -187,12 +211,12 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 全量遍历模式｜无上限 · 53源全部扫描 ")
+        print(" ModelCraft 最近 7 天全量扫描｜严格筛选不动 ")
         print("=" * 70)
 
         articles = self.fetcher.fetch_all_qualified()
         total_found = len(articles)
-        print(f"✅ 全部扫描完成 | 符合条件文章总数：{total_found}")
+        print(f"✅ 最近 7 天符合条件文章总数：{total_found}")
 
         if total_found == 0:
             print("ℹ️ 无合格文章")
@@ -240,7 +264,7 @@ class ModelCraftSystem:
                 print(f"❌ 失败: {title[:50]}...")
 
         print("=" * 70)
-        print(f"📊 最终结果：成功写入={success} | 重复跳过={skipped} | 筛选合格={total_found}")
+        print(f"📊 结果：成功={success} | 跳过重复={skipped}")
         print("=" * 70)
 
 if __name__ == "__main__":
