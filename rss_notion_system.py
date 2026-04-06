@@ -93,10 +93,18 @@ class ContentFilter:
 class DOIExtractor:
     @staticmethod
     def extract(entry):
+        # 1. 优先从 entry.doi 获取
         if hasattr(entry, "doi"):
             d = str(entry.doi).strip()
             if d.startswith("10."):
                 return d
+        # 2. 从链接中提取（arXiv 专用，最强兼容）
+        if hasattr(entry, "link"):
+            link = entry.link
+            doi_match = re.search(r"10\.\d{4,9}[^\s]*", link)
+            if doi_match:
+                return doi_match.group(0).strip()
+        # 3. 从摘要文本提取
         txt = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text()
         match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", txt, re.I)
         if match:
@@ -120,7 +128,8 @@ class PublishDateExtractor:
                 return dt.strftime("%Y-%m-%d")
             except:
                 continue
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # 只有真的获取不到发布日期时，才留空（不会再填今天）
+        return None
 
     @staticmethod
     def is_recent(entry, days=30):
@@ -187,7 +196,6 @@ class RSSFetcher:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
-                    # 只看最近30天
                     if not PublishDateExtractor.is_recent(entry, days=30):
                         continue
                     title = entry.get("title", "")
@@ -224,7 +232,7 @@ class ModelCraftSystem:
         success = 0
         skipped = 0
 
-        for entry, feed_url, signal_flag in articles:
+        for idx, (entry, feed_url, signal_flag) in enumerate(articles, 1):
             title = entry.get("title", "No Title")[:180]
             raw_abs = entry.get("summary", "")
             abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1919]
@@ -234,10 +242,28 @@ class ModelCraftSystem:
             journal = JournalExtractor.extract(feed_url, entry)
             ingested = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+            # ====================== 修复 1：自动设置 RSS_Feed_Tag ======================
+            feed_lower = feed_url.lower()
+            if "arxiv.org" in feed_lower:
+                rss_tag = "arXiv"
+            elif "ssrn" in feed_lower:
+                rss_tag = "SSRN"
+            elif "pubmed" in feed_lower:
+                rss_tag = "PubMed"
+            elif "nature" in feed_lower:
+                rss_tag = "Nature"
+            else:
+                rss_tag = "Custom"
+            # ==========================================================================
+
             if self.notion.is_duplicate(doi=doi, url=source_url):
-                print(f"⏭️  已存在: {title[:50]}...")
+                print(f"⏭️ [{idx}/{total_found}] 已存在: {title[:50]}...")
                 skipped += 1
                 continue
+
+            # ====================== 修复 3：Published_Date 日期容错 ======================
+            published_date_prop = {"date": {"start": published}} if published else None
+            # ============================================================================
 
             payload = {
                 "parent": {"database_id": self.notion.database_id},
@@ -247,20 +273,24 @@ class ModelCraftSystem:
                     "Source_URL": {"url": source_url},
                     "Status": {"select": {"name": "Ingested"}},
                     "Scanned": {"checkbox": False},
-                    "RSS_Feed_Tag": {"select": {"name": "Custom"}},
+                    # ====================== 修复 1 应用 ======================
+                    "RSS_Feed_Tag": {"select": {"name": rss_tag}},
+                    # ==========================================================
                     "Ingested_At": {"date": {"start": ingested}},
                     "Signal_Flag": {"select": {"name": signal_flag}},
                     "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
-                    "Published_Date": {"date": {"start": published}},
+                    # ====================== 修复 3 应用 ======================
+                    "Published_Date": published_date_prop,
+                    # ==========================================================
                     "Journal": {"rich_text": [{"text": {"content": journal}}]}
                 }
             }
 
             if self.notion.create_page(payload):
-                print(f"✅ [{journal}] {signal_flag}: {title[:50]}...")
+                print(f"✅ [{idx}/{total_found}] [{rss_tag}] {signal_flag}: {title[:50]}...")
                 success += 1
             else:
-                print(f"❌ 失败: {title[:50]}...")
+                print(f"❌ [{idx}/{total_found}] 失败: {title[:50]}...")
 
         print("=" * 70)
         print(f"📊 结果：成功写入={success} | 已重复跳过={skipped}")
