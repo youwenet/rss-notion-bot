@@ -126,15 +126,12 @@ class JournalExtractor:
     @staticmethod
     def extract(feed_url, entry):
         url = feed_url.lower()
-        # 顶级学术期刊
         if "nature.com" in url: return "Nature"
         if "cell.com" in url: return "Cell Press"
         if "science.org" in url or "sciencemag.org" in url: return "Science"
         if "pnas.org" in url: return "PNAS"
         if "arxiv.org" in url: return "arXiv"
         if "pubmed.ncbi.nlm.nih.gov" in url: return "PubMed"
-
-        # 认知/行为/神经科学顶刊
         if "trends/cognitive-sciences" in url: return "Trends in Cognitive Sciences"
         if "neuron" in url: return "Neuron"
         if "current-biology" in url: return "Current Biology"
@@ -142,8 +139,6 @@ class JournalExtractor:
         if "sciencenews.org" in url: return "Science News"
         if "nature.com/nathumbehav" in url: return "Nature Human Behaviour"
         if "nature.com/neuro" in url: return "Nature Neuroscience"
-
-        # 权威媒体 & 机构
         if "mit.edu" in url: return "MIT News"
         if "technologyreview.com" in url: return "MIT Technology Review"
         if "economist.com" in url: return "The Economist"
@@ -154,23 +149,19 @@ class JournalExtractor:
         if "apa.org" in url: return "American Psychological Association"
         if "springer.com" in url: return "Springer"
         if "elsevier.com" in url: return "Elsevier"
-
-        # 专业神经科学媒体
         if "neurosciencenews.com" in url: return "Neuroscience News"
         if "knowingneurons.com" in url: return "Knowing Neurons"
         if "learningandthebrain.com" in url: return "Learning & the Brain"
-
-        # 兜底
         return "Academic Source"
 
 # ------------------------------------------------------------------------------
-# RSS 抓取（一次最多 10 条）
+# RSS 抓取：无上限 · 全量遍历
 # ------------------------------------------------------------------------------
 class RSSFetcher:
     def __init__(self):
         self.feeds = config.RSS_FEEDS
 
-    def fetch_qualified_articles(self, limit=50):
+    def fetch_all_qualified(self):
         results = []
         for feed_url in self.feeds:
             try:
@@ -182,9 +173,7 @@ class RSSFetcher:
                     ok, sig = ContentFilter.check(title, abstract)
                     if ok:
                         results.append((entry, feed_url, sig))
-                        if len(results) >= limit:
-                            return results
-            except:
+            except Exception as e:
                 continue
         return results
 
@@ -198,15 +187,17 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 内容系统｜50条批量推送 + 期刊自动识别 ")
+        print(" ModelCraft 全量遍历模式｜无上限 · 53源全部扫描 ")
         print("=" * 70)
 
-        articles = self.fetcher.fetch_qualified_articles(limit=50)
-        if not articles:
+        articles = self.fetcher.fetch_all_qualified()
+        total_found = len(articles)
+        print(f"✅ 全部扫描完成 | 符合条件文章总数：{total_found}")
+
+        if total_found == 0:
             print("ℹ️ 无合格文章")
             return
 
-        print(f"✅ 筛选完成：共 {len(articles)} 篇合格文章")
         success = 0
         skipped = 0
 
@@ -249,7 +240,7 @@ class ModelCraftSystem:
                 print(f"❌ 失败: {title[:50]}...")
 
         print("=" * 70)
-        print(f"📊 结果：成功={success} | 重复跳过={skipped}")
+        print(f"📊 最终结果：成功写入={success} | 重复跳过={skipped} | 筛选合格={total_found}")
         print("=" * 70)
 
 if __name__ == "__main__":
