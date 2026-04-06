@@ -53,7 +53,7 @@ class NotionClient:
             return False
 
 # ------------------------------------------------------------------------------
-# 筛选逻辑（完全不动你的规则）
+# 严格筛选规则（完全不动）
 # ------------------------------------------------------------------------------
 class ContentFilter:
     @staticmethod
@@ -122,6 +122,26 @@ class PublishDateExtractor:
                 continue
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    @staticmethod
+    def is_recent(entry, days=30):
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=days)
+        for key in ["published", "updated", "pubDate", "date"]:
+            s = entry.get(key, "")
+            if not s:
+                continue
+            try:
+                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+                return dt >= cutoff
+            except:
+                pass
+            try:
+                dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
+                return dt >= cutoff
+            except:
+                continue
+        return False
+
 class JournalExtractor:
     @staticmethod
     def extract(feed_url, entry):
@@ -155,7 +175,7 @@ class JournalExtractor:
         return "Academic Source"
 
 # ------------------------------------------------------------------------------
-# RSS 抓取（修复BUG版：不过滤时间，先抓全部，看看到底有没有文章）
+# RSS 抓取：严格筛选 + 最近30天
 # ------------------------------------------------------------------------------
 class RSSFetcher:
     def __init__(self):
@@ -167,11 +187,12 @@ class RSSFetcher:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
+                    # 只看最近30天
+                    if not PublishDateExtractor.is_recent(entry, days=30):
+                        continue
                     title = entry.get("title", "")
                     raw_abs = entry.get("summary", "")
                     abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)
-
-                    # 筛选
                     ok, sig = ContentFilter.check(title, abstract)
                     if ok:
                         results.append((entry, feed_url, sig))
@@ -189,15 +210,15 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 修复版｜不过滤时间，全部扫描 ")
+        print(" ModelCraft 严格模式｜最近30天全量扫描 ")
         print("=" * 70)
 
         articles = self.fetcher.fetch_all_qualified()
         total_found = len(articles)
-        print(f"✅ 筛选合格文章：{total_found}")
+        print(f"✅ 近30天符合严格条件文章：{total_found}")
 
         if total_found == 0:
-            print("❌ 0 条 → 代表筛选规则太严，不是抓取BUG")
+            print("ℹ️ 无合格文章")
             return
 
         success = 0
@@ -242,7 +263,7 @@ class ModelCraftSystem:
                 print(f"❌ 失败: {title[:50]}...")
 
         print("=" * 70)
-        print(f"📊 结果：成功={success} | 跳过重复={skipped}")
+        print(f"📊 结果：成功写入={success} | 已重复跳过={skipped}")
         print("=" * 70)
 
 if __name__ == "__main__":
