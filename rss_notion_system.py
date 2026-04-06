@@ -187,10 +187,10 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 内容系统｜20条批量推送 + 期刊自动识别 ")
+        print(" ModelCraft 内容系统｜50条批量推送 + 期刊自动识别 ")
         print("=" * 70)
 
-        articles = self.fetcher.fetch_qualified_articles(limit=50)
+        articles = self.fetcher.fetch_qualified_articles(limit= 50)
         if not articles:
             print("ℹ️ 无合格文章")
             return
