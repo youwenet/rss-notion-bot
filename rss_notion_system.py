@@ -29,215 +29,218 @@ class NotionClient:
             )
             return r.status_code in (200, 201)
         except Exception as e:
-            print(f"⚠️ Notion 请求异常: {e}")
+            print(f"⚠️ Notion 异常: {e}")
             return False
 
-    def query_existing(self, doi=None, url=None):
-        """优先 DOI 去重，没有再用 URL"""
+    def is_duplicate(self, doi=None, url=None):
         filters = []
-        
         if doi and doi.strip():
-            filters.append({
-                "property": "DOI",
-                "rich_text": {"equals": doi.strip()}
-            })
-        
+            filters.append({"property": "DOI", "rich_text": {"equals": doi.strip()}})
         if url and url.strip():
-            filters.append({
-                "property": "Source_URL",
-                "url": {"equals": url.strip()}
-            })
-
+            filters.append({"property": "Source_URL", "url": {"equals": url.strip()}})
         if not filters:
             return False
-
-        payload = {
-            "filter": {"or": filters}
-        }
 
         try:
             res = requests.post(
                 f"https://api.notion.com/v1/databases/{self.database_id}/query",
                 headers=self.headers,
-                json=payload,
+                json={"filter": {"or": filters}},
                 timeout=10
             )
-            data = res.json()
-            return len(data.get("results", [])) > 0
+            return len(res.json().get("results", [])) > 0
         except:
             return False
 
 # ------------------------------------------------------------------------------
-# 三层关键词筛选
+# 关键词筛选引擎
 # ------------------------------------------------------------------------------
 class ContentFilter:
     @staticmethod
-    def clean_text(s):
-        return re.sub(r'\s+', ' ', str(s)).strip().lower()
+    def clean(text):
+        return re.sub(r"\s+", " ", str(text)).strip().lower()
 
     @classmethod
-    def should_ingest(cls, title, abstract):
-        title_clean = cls.clean_text(title)
-        abs_clean = cls.clean_text(abstract)
-        full_text = title_clean + " " + abs_clean
-        word_count = len(abstract.split())
+    def check(cls, title, abstract):
+        t = cls.clean(title)
+        a = cls.clean(abstract)
+        full = t + " " + a
+        words = len(abstract.split())
 
-        if word_count < config.MIN_ABSTRACT_WORDS:
-            return False, f"字数不足 ({word_count})"
+        if words < config.MIN_ABSTRACT_WORDS:
+            return False, "too short"
 
-        exclude_hits = sum(1 for kw in config.EXCLUDE_KEYWORDS if kw in full_text)
-        if exclude_hits >= 2:
-            return False, f"排除词命中 {exclude_hits} 个"
+        exclude = sum(1 for kw in config.EXCLUDE_KEYWORDS if kw in full)
+        if exclude >= 2:
+            return False, f"exclude {exclude}"
 
-        core_hits = sum(1 for kw in config.CORE_KEYWORDS if kw in full_text)
-        if core_hits == 0:
-            return False, "无核心关键词"
+        core = sum(1 for kw in config.CORE_KEYWORDS if kw in full)
+        if core == 0:
+            return False, "no core"
 
-        signal_hits = sum(1 for kw in config.SIGNAL_KEYWORDS if kw in full_text)
-        if signal_hits >= 2:
-            signal_flag = "High Signal"
-        elif signal_hits == 1:
-            signal_flag = "Medium Signal"
+        signal = sum(1 for kw in config.SIGNAL_KEYWORDS if kw in full)
+        if signal >= 2:
+            sig = "High Signal"
+        elif signal == 1:
+            sig = "Medium Signal"
         else:
-            signal_flag = "Standard"
-
-        return True, signal_flag
+            sig = "Standard"
+        return True, sig
 
 # ------------------------------------------------------------------------------
-# DOI 提取（加固版）
+# 工具：DOI / 发布时间 / 期刊名
 # ------------------------------------------------------------------------------
 class DOIExtractor:
     @staticmethod
     def extract(entry):
-        # 1. 取 doi 字段
         if hasattr(entry, "doi"):
             d = str(entry.doi).strip()
             if d.startswith("10."):
                 return d
-
-        # 2. 摘要里匹配
-        text = entry.get("summary", "")
-        clean_text = BeautifulSoup(text, "html.parser").get_text(strip=True)
-        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", clean_text, re.I)
+        txt = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text()
+        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", txt, re.I)
         if match:
             return match.group(0).strip()
-
-        # 3. 链接里提取
-        link = entry.get("link", "")
-        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", link, re.I)
-        if match:
-            return match.group(0).strip()
-
         return ""
 
-# ------------------------------------------------------------------------------
-# 发布时间 Published_Date 提取
-# ------------------------------------------------------------------------------
 class PublishDateExtractor:
     @staticmethod
     def extract(entry):
-        candidates = [
-            entry.get("published", ""),
-            entry.get("updated", ""),
-            entry.get("pubDate", ""),
-            entry.get("date", ""),
-        ]
-        for date_str in candidates:
-            if not date_str:
+        for key in ["published", "updated", "pubDate", "date"]:
+            s = entry.get(key, "")
+            if not s:
                 continue
             try:
-                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
                 return dt.strftime("%Y-%m-%d")
             except:
                 pass
             try:
-                dt = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z")
+                dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
                 return dt.strftime("%Y-%m-%d")
             except:
                 continue
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+class JournalExtractor:
+    @staticmethod
+    def extract(feed_url, entry):
+        # 从域名自动判断期刊名
+        if "arxiv.org" in feed_url:
+            return "arXiv"
+        if "nature.com" in feed_url:
+            return "Nature"
+        if "cell.com" in feed_url:
+            return "Cell"
+        if "sciencemag.org" in feed_url:
+            return "Science"
+        if "pnas.org" in feed_url:
+            return "PNAS"
+        if "neurosciencenews.com" in feed_url:
+            return "Neuroscience News"
+        if "mit.edu" in feed_url:
+            return "MIT News"
+        if "sciencenews.org" in feed_url:
+            return "Science News"
+        if "scientificamerican.com" in feed_url:
+            return "Scientific American"
+        if "behavioralscientist.org" in feed_url:
+            return "Behavioral Scientist"
+        if "pubmed.ncbi.nlm.nih.gov" in feed_url:
+            return "PubMed"
+        if "apa.org" in feed_url:
+            return "APA"
+        return "Unknown Journal"
+
 # ------------------------------------------------------------------------------
-# RSS 抓取
+# RSS 抓取（一次最多 10 条）
 # ------------------------------------------------------------------------------
-class RSSCollector:
+class RSSFetcher:
     def __init__(self):
         self.feeds = config.RSS_FEEDS
 
-    def fetch_best_article(self):
-        for url in self.feeds:
+    def fetch_qualified_articles(self, limit=10):
+        results = []
+        for feed_url in self.feeds:
             try:
-                feed = feedparser.parse(url)
+                feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
                     title = entry.get("title", "")
-                    summary = entry.get("summary", "")
-                    abstract = BeautifulSoup(summary, "html.parser").get_text(strip=True)
-                    ok, reason = ContentFilter.should_ingest(title, abstract)
+                    raw_abs = entry.get("summary", "")
+                    abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)
+                    ok, sig = ContentFilter.check(title, abstract)
                     if ok:
-                        return entry, reason
+                        results.append((entry, feed_url, sig))
+                        if len(results) >= limit:
+                            return results
             except:
                 continue
-        return None, None
+        return results
 
 # ------------------------------------------------------------------------------
 # 主系统
 # ------------------------------------------------------------------------------
-class ModelCraftContentSystem:
+class ModelCraftSystem:
     def __init__(self):
         self.notion = NotionClient()
-        self.collector = RSSCollector()
+        self.fetcher = RSSFetcher()
 
     def run(self):
         print("=" * 70)
-        print(" ModelCraft 完整系统 v1.0｜筛选 + 去重 + DOI + 发布时间 ")
+        print(" ModelCraft 内容系统｜10条批量推送 + 期刊自动识别 ")
         print("=" * 70)
 
-        entry, signal_flag = self.collector.fetch_best_article()
-        if not entry:
-            print("ℹ️ 未找到符合条件的文章")
+        articles = self.fetcher.fetch_qualified_articles(limit=10)
+        if not articles:
+            print("ℹ️ 无合格文章")
             return
 
-        # 基础信息
-        title = entry.get("title", "No Title")[:180]
-        raw_abstract = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text(strip=True)
-        abstract = raw_abstract[:1500]
-        source_url = entry.get("link", "")
-        
-        # 增强字段
-        doi = DOIExtractor.extract(entry)
-        published_at = PublishDateExtractor.extract(entry)
-        ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        print(f"✅ 筛选完成：共 {len(articles)} 篇合格文章")
+        success = 0
+        skipped = 0
 
-        # 去重
-        if self.notion.query_existing(doi=doi, url=source_url):
-            print("✅ 已存在，跳过重复文章")
-            return
+        for entry, feed_url, signal_flag in articles:
+            title = entry.get("title", "No Title")[:180]
+            raw_abs = entry.get("summary", "")
+            abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1500]
+            source_url = entry.get("link", "")
+            doi = DOIExtractor.extract(entry)
+            published = PublishDateExtractor.extract(entry)
+            journal = JournalExtractor.extract(feed_url, entry)
+            ingested = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # 写入
-        payload = {
-            "parent": {"database_id": self.notion.database_id},
-            "properties": {
-                "Title": {"title": [{"text": {"content": title}}]},
-                "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
-                "Source_URL": {"url": source_url},
-                "Status": {"select": {"name": "Ingested"}},
-                "Scanned": {"checkbox": False},
-                "RSS_Feed_Tag": {"select": {"name": "Custom"}},
-                "Ingested_At": {"date": {"start": ingested_at}},
-                "Signal_Flag": {"select": {"name": signal_flag}},
-                "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
-                "Published_Date": {"date": {"start": published_at}}
+            if self.notion.is_duplicate(doi=doi, url=source_url):
+                print(f"⏭️  已存在: {title[:50]}...")
+                skipped += 1
+                continue
+
+            payload = {
+                "parent": {"database_id": self.notion.database_id},
+                "properties": {
+                    "Title": {"title": [{"text": {"content": title}}]},
+                    "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
+                    "Source_URL": {"url": source_url},
+                    "Status": {"select": {"name": "Ingested"}},
+                    "Scanned": {"checkbox": False},
+                    "RSS_Feed_Tag": {"select": {"name": "Custom"}},
+                    "Ingested_At": {"date": {"start": ingested}},
+                    "Signal_Flag": {"select": {"name": signal_flag}},
+                    "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
+                    "Published_Date": {"date": {"start": published}},
+                    "Journal": {"rich_text": [{"text": {"content": journal}}]}
+                }
             }
-        }
 
-        if self.notion.create_page(payload):
-            print(f"✅ 写入成功 | {signal_flag}")
-            print(f"标题: {title[:70]}...")
-            print(f"DOI: {doi if doi else '无'}")
-            print(f"发布时间: {published_at}")
-        else:
-            print("❌ 写入 Notion 失败")
+            if self.notion.create_page(payload):
+                print(f"✅ [{journal}] {signal_flag}: {title[:50]}...")
+                success += 1
+            else:
+                print(f"❌ 失败: {title[:50]}...")
+
+        print("=" * 70)
+        print(f"📊 结果：成功={success} | 重复跳过={skipped}")
+        print("=" * 70)
 
 if __name__ == "__main__":
-    system = ModelCraftContentSystem()
+    system = ModelCraftSystem()
     system.run()
