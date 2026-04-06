@@ -99,19 +99,32 @@ class ContentFilter:
 class DOIExtractor:
     @staticmethod
     def extract(entry):
+        # ==============================================
+        # 1. 优先：标准 DOI 字段（所有正规期刊都走这里）
+        # ==============================================
         if hasattr(entry, "doi"):
             d = str(entry.doi).strip()
             if d.startswith("10."):
                 return d
-        if hasattr(entry, "link"):
-            link = entry.link
-            doi_match = re.search(r"10\.\d{4,9}[^\s]*", link)
-            if doi_match:
-                return doi_match.group(0).strip()
+
+        # ==============================================
+        # 2. arXiv 专用：自动生成官方 DOI（不影响任何其他网站）
+        # ==============================================
+        link = entry.get("link", "")
+        if "arxiv.org/abs/" in link or "arxiv.org/pdf/" in link:
+            arxiv_id = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9\.]+)", link)
+            if arxiv_id:
+                return f"10.48550/arXiv.{arxiv_id.group(1)}"
+
+        # ==============================================
+        # 3. 兜底：从链接/摘要里提取（所有网站通用）
+        # ==============================================
         txt = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text()
-        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", txt, re.I)
+        match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", txt + " " + link, re.I)
         if match:
             return match.group(0).strip()
+
+        # 都没找到 → 空
         return ""
 
 class PublishDateExtractor:
