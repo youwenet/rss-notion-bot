@@ -7,10 +7,17 @@ from datetime import datetime, timedelta, timezone
 import config
 
 # ------------------------------------------------------------------------------
-# 固定日期区间（你只改这里！）
+# 【双模式切换：自动 / 手动】
 # ------------------------------------------------------------------------------
-START_DATE = "2025-11-01"
-END_DATE = "2025-11-30"
+MODE = "auto"          # 每日自动任务用：auto
+# MODE = "manual"      # 你手动测试用：manual
+
+# 仅手动模式下生效：
+MANUAL_START_DATE = "2025-11-01"
+MANUAL_END_DATE   = "2025-11-30"
+
+# 自动模式下抓取最近 N 天（默认1天，只抓最新，API最省）
+AUTO_RECENT_DAYS = 1
 
 # ------------------------------------------------------------------------------
 # Notion API 客户端
@@ -99,32 +106,21 @@ class ContentFilter:
 class DOIExtractor:
     @staticmethod
     def extract(entry):
-        # ==============================================
-        # 1. 优先：标准 DOI 字段（所有正规期刊都走这里）
-        # ==============================================
         if hasattr(entry, "doi"):
             d = str(entry.doi).strip()
             if d.startswith("10."):
                 return d
 
-        # ==============================================
-        # 2. arXiv 专用：自动生成官方 DOI（不影响任何其他网站）
-        # ==============================================
         link = entry.get("link", "")
         if "arxiv.org/abs/" in link or "arxiv.org/pdf/" in link:
             arxiv_id = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9\.]+)", link)
             if arxiv_id:
                 return f"10.48550/arXiv.{arxiv_id.group(1)}"
 
-        # ==============================================
-        # 3. 兜底：从链接/摘要里提取（所有网站通用）
-        # ==============================================
         txt = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text()
         match = re.search(r"10\.\d{4,9}/[-._;/:a-z0-9]+", txt + " " + link, re.I)
         if match:
             return match.group(0).strip()
-
-        # 都没找到 → 空
         return ""
 
 class PublishDateExtractor:
@@ -164,12 +160,16 @@ class PublishDateExtractor:
 
     @staticmethod
     def in_range(entry):
-        start = datetime.strptime(START_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        end = datetime.strptime(END_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        dt = PublishDateExtractor.parse_entry_date(entry)
-        if not dt:
-            return False
-        return start <= dt <= end
+        if MODE == "auto":
+            now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(days=AUTO_RECENT_DAYS)
+            dt = PublishDateExtractor.parse_entry_date(entry)
+            return dt is not None and dt >= cutoff
+        else:
+            start = datetime.strptime(MANUAL_START_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end = datetime.strptime(MANUAL_END_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            dt = PublishDateExtractor.parse_entry_date(entry)
+            return dt is not None and start <= dt <= end
 
 class JournalExtractor:
     @staticmethod
@@ -184,7 +184,7 @@ class JournalExtractor:
         return "Academic Source"
 
 # ------------------------------------------------------------------------------
-# RSS 抓取：固定日期区间
+# RSS 抓取
 # ------------------------------------------------------------------------------
 class RSSFetcher:
     def __init__(self):
@@ -218,12 +218,15 @@ class ModelCraftSystem:
 
     def run(self):
         print("=" * 70)
-        print(f" ModelCraft｜固定日期扫描：{START_DATE} → {END_DATE}")
+        if MODE == "auto":
+            print(f" ModelCraft｜自动模式：最近 {AUTO_RECENT_DAYS} 天")
+        else:
+            print(f" ModelCraft｜手动模式：{MANUAL_START_DATE} → {MANUAL_END_DATE}")
         print("=" * 70)
 
         articles = self.fetcher.fetch_all_qualified()
         total_found = len(articles)
-        print(f"✅ 该区间符合条件文章：{total_found}")
+        print(f"✅ 符合条件文章：{total_found}")
 
         if total_found == 0:
             print("ℹ️ 无合格文章")
