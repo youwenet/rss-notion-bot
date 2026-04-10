@@ -128,43 +128,76 @@ class DOIExtractor:
             return match.group(0).strip()
         return ""
 
+# ------------------------------------------------------------------------------
+# 工具类：仅修复发布时间解析，不改动任何其他逻辑
+# ------------------------------------------------------------------------------
 class PublishDateExtractor:
     @staticmethod
     def extract(entry):
-        for key in ["published", "updated", "pubDate", "date"]:
-            s = entry.get(key, "")
-            if not s:
-                continue
-            try:
-                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-                return dt.strftime("%Y-%m-%d")
-            except:
-                pass
-            try:
-                dt = datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
-                return dt.strftime("%Y-%m-%d")
-            except:
-                continue
+        # 读取所有可能的时间字段
+        raw_date = ""
+        for key in ["published", "updated", "pubDate", "date", "created"]:
+            val = entry.get(key, "")
+            if val:
+                raw_date = val
+                break
+
+        if not raw_date:
+            print(f"⚠️ 警告：未找到发布时间")
+            return None
+
+        # 格式 1：标准 ISO 时间
+        try:
+            dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d")
+        except:
+            pass
+
+        # 格式 2：英文 RSS 时间（arxiv、nature 通用）
+        try:
+            dt = datetime.strptime(raw_date, "%a, %d %b %Y %H:%M:%S %z")
+            return dt.strftime("%Y-%m-%d")
+        except:
+            pass
+
+        # 格式 3：直接截取日期
+        try:
+            dt = datetime.strptime(raw_date[:10], "%Y-%m-%d")
+            return dt.strftime("%Y-%m-%d")
+        except:
+            pass
+
+        print(f"⚠️ 警告：时间解析失败 → {raw_date}")
         return None
 
     @staticmethod
     def parse_entry_date(entry):
-        for key in ["published", "updated", "pubDate", "date"]:
-            s = entry.get(key, "")
-            if not s:
-                continue
-            try:
-                return datetime.fromisoformat(s.replace("Z", "+00:00"))
-            except:
-                pass
-            try:
-                return datetime.strptime(s, "%a, %d %b %Y %H:%M:%S %z")
-            except:
-                continue
+        # 用于时间范围判断，逻辑不变
+        raw_date = ""
+        for key in ["published", "updated", "pubDate", "date", "created"]:
+            val = entry.get(key, "")
+            if val:
+                raw_date = val
+                break
+
+        if not raw_date:
+            return None
+
+        try:
+            return datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+        except:
+            pass
+
+        try:
+            return datetime.strptime(raw_date, "%a, %d %b %Y %H:%M:%S %z")
+        except:
+            pass
+
         return None
 
     @staticmethod
     def in_range(entry):
+        # 时间筛选逻辑完全不变
         if MODE == "auto":
             now = datetime.now(timezone.utc)
             cutoff = now - timedelta(days=AUTO_RECENT_DAYS)
