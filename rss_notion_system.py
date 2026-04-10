@@ -282,7 +282,7 @@ class ModelCraftSystem:
             # 🔥 100% 匹配你最新 DB1 46 字段
             # ==============================
             payload = {
-                "parent": {"database_id": self.notion.database_id},
+                "parent": {"database_id": "33e51e46c0d9800fb867e91625ea3160"},
                 "properties": {
                     # Layer 1 — INPUT 层（Python 写入 10 个）
                     "title": {"title": [{"text": {"content": title}}]},
