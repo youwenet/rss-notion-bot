@@ -72,6 +72,18 @@ SIGNAL_KEYWORDS = [
     "paradox", "counterintuitive", "surprising", "unexpected", "illusion", "myth",
     "irrational", "hidden", "invisible", "why people", "how humans", "what predicts",
     "when people", "despite", "more likely", "worse than"
+    
+    # 你新增的强信号词（已全部加入）
+    "backfire",
+    "overestimate",
+    "underestimate",
+    "fail to",
+    "less than",
+    "predict",
+    "what if",
+    "even when",
+    "no longer",
+    "contrary to"
 ]
 
 # ----------------------
