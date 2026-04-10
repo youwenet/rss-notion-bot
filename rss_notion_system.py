@@ -13,8 +13,8 @@ MODE = "auto"          # 每日自动任务用：auto
 # MODE = "manual"      # 你手动测试用：manual
 
 # 仅手动模式下生效：
-MANUAL_START_DATE = "2025-11-01"
-MANUAL_END_DATE   = "2025-11-30"
+MANUAL_START_DATE = "2026-04-01"
+MANUAL_END_DATE   = "2026-04-11"
 
 # 自动模式下抓取最近 N 天（默认2天，覆盖昨日+今日，永不漏文）
 AUTO_RECENT_DAYS = 2
