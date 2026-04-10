@@ -277,6 +277,8 @@ class ModelCraftSystem:
         skipped = 0
 
         for idx, (entry, feed_url, signal_flag) in enumerate(articles, 1):
+            import time
+            time.sleep(0.15)  # 150毫秒延迟，绝对安全
             title = entry.get("title", "No Title")[:180]
             raw_abs = entry.get("summary", "")
             abstract = BeautifulSoup(raw_abs, "html.parser").get_text(strip=True)[:1919]
