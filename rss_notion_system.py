@@ -142,8 +142,11 @@ class PublishDateExtractor:
                 raw_date = val
                 break
 
+        # 🔥 调试打印：直接显示程序拿到的原始时间
+        print(f"🕒 拿到的原始发布时间: {raw_date}")
+
         if not raw_date:
-            print(f"⚠️ 警告：未找到发布时间")
+            print(f"⚠️ 警告：未找到发布时间，此字段为空")
             return None
 
         # 格式 1：标准 ISO 时间
