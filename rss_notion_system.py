@@ -48,9 +48,9 @@ class NotionClient:
     def is_duplicate(self, doi=None, url=None):
         filters = []
         if doi and doi.strip():
-            filters.append({"property": "DOI", "rich_text": {"equals": doi.strip()}})
+            filters.append({"property": "doi", "rich_text": {"equals": doi.strip()}})
         if url and url.strip():
-            filters.append({"property": "Source_URL", "url": {"equals": url.strip()}})
+            filters.append({"property": "source_url", "url": {"equals": url.strip()}})
         if not filters:
             return False
 
@@ -245,42 +245,65 @@ class ModelCraftSystem:
             journal = JournalExtractor.extract(feed_url, entry)
             ingested = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+            # RSS 来源标签
             feed_lower = feed_url.lower()
             if "arxiv.org" in feed_lower:
                 rss_tag = "arXiv"
-            elif "ssrn" in feed_lower:
-                rss_tag = "SSRN"
             elif "pubmed" in feed_lower:
                 rss_tag = "PubMed"
             elif "nature" in feed_lower:
                 rss_tag = "Nature"
+            elif "ssrn" in feed_lower:
+                rss_tag = "SSRN"
             else:
                 rss_tag = "Custom"
 
+            # 抓取质量（完全匹配你数据库：Complete 完整 / Partial 缺字段 / Error 失败）
+            if title and abstract and source_url and published:
+                ingestion_quality = "Complete 完整"
+            else:
+                ingestion_quality = "Partial 缺字段"
+
+            # 去重
             if self.notion.is_duplicate(doi=doi, url=source_url):
                 print(f"⏭️ [{idx}/{total_found}] 已存在: {title[:50]}...")
                 skipped += 1
                 continue
 
+            # 日期处理
             published_date_prop = {"date": {"start": published}} if published else None
 
+            # ==============================
+            # 🔥 100% 匹配你最新 DB1 46 字段
+            # ==============================
             payload = {
                 "parent": {"database_id": self.notion.database_id},
                 "properties": {
-                    "Title": {"title": [{"text": {"content": title}}]},
-                    "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
-                    "Source_URL": {"url": source_url},
-                    "Status": {"select": {"name": "Ingested"}},
-                    "Scanned": {"checkbox": False},
-                    "RSS_Feed_Tag": {"select": {"name": rss_tag}},
-                    "Ingested_At": {"date": {"start": ingested}},
-                    "Signal_Flag": {"select": {"name": signal_flag}},
-                    "DOI": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
-                    "Published_Date": published_date_prop,
-                    "Journal": {"rich_text": [{"text": {"content": journal}}]}
+                    # Layer 1 — INPUT 层（Python 写入 10 个）
+                    "title": {"title": [{"text": {"content": title}}]},
+                    "abstract": {"rich_text": [{"text": {"content": abstract}}]},
+                    "source_url": {"url": source_url},
+                    "doi": {"rich_text": [{"text": {"content": doi if doi else ""}}]},
+                    "journal": {"rich_text": [{"text": {"content": journal}}]},
+                    "published_date": published_date_prop,
+                    "rss_feed_tag": {"select": {"name": rss_tag}},
+                    "ingested_at": {"date": {"start": ingested}},
+                    "ingestion_quality": {"select": {"name": ingestion_quality}},
+                    "scanned": {"checkbox": False},
+
+                    # Layer 2C — signal_flag
+                    "signal_flag": {"select": {"name": signal_flag}},
+
+                    # Layer 3 — 状态（完全匹配你数据库）
+                    "status": {"select": {"name": "Ingested 采集"}},
+
+                    # 2 个关联字段（无需写入，留空即可）
+                    # associated model → 自动双向关联
+                    # script_library → 自动双向关联
                 }
             }
 
+            # 写入
             if self.notion.create_page(payload):
                 print(f"✅ [{idx}/{total_found}] [{rss_tag}] {signal_flag}: {title[:50]}...")
                 success += 1
