@@ -25,7 +25,7 @@ AUTO_RECENT_DAYS = 2
 class NotionClient:
     def __init__(self):
         self.api_key = os.getenv("NOTION_API_KEY")
-        self.database_id = os.getenv("DATABASE_ID")
+        self.database_id = os.getenv("DATABASE_ID_PAPER")
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Notion-Version": config.NOTION_VERSION,
