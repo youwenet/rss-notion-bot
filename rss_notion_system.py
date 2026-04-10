@@ -22,6 +22,9 @@ AUTO_RECENT_DAYS = 2
 # ------------------------------------------------------------------------------
 # Notion API 客户端
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Notion API 客户端（已开启错误详情，直接告诉你哪里错）
+# ------------------------------------------------------------------------------
 class NotionClient:
     def __init__(self):
         self.api_key = os.getenv("NOTION_API_KEY")
@@ -40,9 +43,14 @@ class NotionClient:
                 json=payload,
                 timeout=config.TIMEOUT
             )
+            # --------------------------
+            # 🔥 这里会打印真实错误！
+            # --------------------------
+            if r.status_code not in (200, 201):
+                print(f"\n❌ API 错误详情: {r.json()}")  # 直接显示真实原因
             return r.status_code in (200, 201)
         except Exception as e:
-            print(f"⚠️ Notion 异常: {e}")
+            print(f"\n⚠️ 网络/配置异常: {e}")
             return False
 
     def is_duplicate(self, doi=None, url=None):
@@ -62,9 +70,9 @@ class NotionClient:
                 timeout=10
             )
             return len(res.json().get("results", [])) > 0
-        except:
+        except Exception as e:
+            print(f"\n⚠️ 去重检查失败: {e}")
             return False
-
 # ------------------------------------------------------------------------------
 # 严格筛选规则
 # ------------------------------------------------------------------------------
