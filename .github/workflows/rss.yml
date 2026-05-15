@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-      DATABASE_ID: ${{ secrets.DATABASE_ID }}
+      DATABASE_ID_PAPER: ${{ secrets.DATABASE_ID_PAPER }}
 
     steps:
       - uses: actions/checkout@v3
