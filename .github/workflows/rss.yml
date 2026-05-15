@@ -10,12 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-      DATABASE_ID_PAPER: ${{ secrets.DATABASE_ID_PAPER }}
+      DATABASE_ID_PAPER: ${{ secrets.DATABASE_ID_PAPER }}  # 👈 只改了这行
 
     steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4  # 👈 升级，去掉Node.js警告
+      - uses: actions/setup-python@v5  # 👈 升级，去掉Node.js警告
         with:
           python-version: '3.11'
 
